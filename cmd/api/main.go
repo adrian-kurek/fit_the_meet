@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 
+	middleware "github.com/adrian-kurek/fit_the_meet/common/authentication"
 	commoninterfaces "github.com/adrian-kurek/fit_the_meet/common/interfaces"
 	"github.com/adrian-kurek/fit_the_meet/common/logger"
 	"github.com/adrian-kurek/fit_the_meet/config"
@@ -17,10 +18,21 @@ import (
 	"github.com/joho/godotenv"
 )
 
-func bootstrapHTTPServer(db *sql.DB, port string, logger commoninterfaces.Logger) *server.HTTP {
+func bootstrapHTTPServer(
+	db *sql.DB,
+	cache commoninterfaces.CacheService,
+	port string,
+	logger commoninterfaces.Logger,
+) *server.HTTP {
 	authRepository := auth.NewRepository(db, logger)
 	userRepository := user.NewRepository(db, logger)
-	authService := auth.NewService(authRepository, userRepository, logger)
+	authenticationMiddleware := middleware.NewMiddleware(
+		os.Getenv("ACCESS_TOKEN_SECRET"),
+		os.Getenv("REFRESH_TOKEN_SECRET"),
+		logger,
+		cache,
+	)
+	authService := auth.NewService(authRepository, userRepository, authenticationMiddleware, logger)
 	authHandler := auth.NewHandler(authService, logger)
 	dependenciesConfig := server.NewDependencyConfig(
 		port,
@@ -55,7 +67,7 @@ func main() {
 
 	port := os.Getenv("PORT")
 
-	httpServer := bootstrapHTTPServer(db.Connection, port, logger)
+	httpServer := bootstrapHTTPServer(db.Connection, cacheService, port, logger)
 	apiCtx, apiCtxCancel := context.WithCancel(context.Background())
 	go func() {
 		logger.Info("server started", "port", port)

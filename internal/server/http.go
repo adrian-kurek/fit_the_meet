@@ -18,6 +18,7 @@ const (
 
 type authHandler interface {
 	Register(w http.ResponseWriter, r *http.Request) error
+	Login(w http.ResponseWriter, r *http.Request) error
 }
 
 type DependencyConfig struct {

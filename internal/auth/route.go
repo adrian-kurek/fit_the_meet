@@ -10,6 +10,7 @@ import (
 
 type authHandler interface {
 	Register(w http.ResponseWriter, r *http.Request) error
+	Login(w http.ResponseWriter, r *http.Request) error
 }
 
 type Routes struct {
@@ -27,4 +28,5 @@ func NewRoutes(authHandler authHandler, logger commoninterfaces.Logger) *Routes 
 func (ar *Routes) Setup(router *http.ServeMux) {
 	prefix := "/auth"
 	router.Handle(fmt.Sprintf("POST %s/register", prefix), request.Make(ar.authHandler.Register, ar.logger))
+	router.Handle(fmt.Sprintf("POST %s/login", prefix), request.Make(ar.authHandler.Login, ar.logger))
 }

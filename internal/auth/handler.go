@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"time"
@@ -16,7 +17,12 @@ import (
 const authTimeout = 2 * time.Second
 
 type authService interface {
-	Register(ctx context.Context, registerData Register) error
+	Register(ctx context.Context, register Register) error
+	Login(ctx context.Context,
+		login Login,
+		ipAddress string,
+		deviceInfo string,
+	) (string, []byte, error)
 }
 
 type Handler struct {
@@ -59,5 +65,44 @@ func (ah *Handler) Register(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	response.Send(w, http.StatusCreated, nil)
+	return nil
+}
+
+func (ah *Handler) Login(w http.ResponseWriter, r *http.Request) error {
+	ctx, cancel := context.WithTimeout(r.Context(), authTimeout)
+	defer cancel()
+
+	reqData, err := request.ReadBody[Login](r)
+	if err != nil {
+		return commonerrors.Validation("provided invalid json format")
+	}
+
+	err = validation.ValidateRequestData(reqData)
+	if err != nil {
+		return err
+	}
+
+	ipAddress := r.RemoteAddr
+	deviceInfo := r.UserAgent()
+
+	accessToken, refreshToken, err := ah.authService.Login(ctx, *reqData, ipAddress, deviceInfo)
+	if err != nil {
+		return ah.handleTimeout(err, r.URL.Path)
+	}
+
+	expiration := time.Now().Add(7 * 24 * time.Hour)
+
+	cookie := http.Cookie{
+		Name:     "refreshToken",
+		Value:    hex.EncodeToString(refreshToken),
+		Expires:  expiration,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+		HttpOnly: true,
+	}
+
+	http.SetCookie(w, &cookie)
+	response.Send(w, http.StatusOK, map[string]string{"token": accessToken})
+
 	return nil
 }

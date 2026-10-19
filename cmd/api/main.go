@@ -33,7 +33,7 @@ func bootstrapHTTPServer(
 		cache,
 	)
 	authService := auth.NewService(authRepository, userRepository, authenticationMiddleware, logger)
-	authHandler := auth.NewHandler(authService, logger)
+	authHandler := auth.NewHandler(authService, authenticationMiddleware, logger)
 	dependenciesConfig := server.NewDependencyConfig(
 		port,
 		logger,

@@ -11,6 +11,7 @@ import (
 type authHandler interface {
 	Register(w http.ResponseWriter, r *http.Request) error
 	Login(w http.ResponseWriter, r *http.Request) error
+	Verify(w http.ResponseWriter, r *http.Request) error
 }
 
 type Routes struct {
@@ -29,4 +30,5 @@ func (ar *Routes) Setup(router *http.ServeMux) {
 	prefix := "/auth"
 	router.Handle(fmt.Sprintf("POST %s/register", prefix), request.Make(ar.authHandler.Register, ar.logger))
 	router.Handle(fmt.Sprintf("POST %s/login", prefix), request.Make(ar.authHandler.Login, ar.logger))
+	router.Handle(fmt.Sprintf("GET %s/verify", prefix), request.Make(ar.authHandler.Verify, ar.logger))
 }

@@ -26,14 +26,20 @@ type authService interface {
 }
 
 type Handler struct {
-	logger      commoninterfaces.Logger
-	authService authService
+	logger                   commoninterfaces.Logger
+	authService              authService
+	authenticationMiddleware authenticationMiddleware
 }
 
-func NewHandler(authService authService, logger commoninterfaces.Logger) *Handler {
+func NewHandler(
+	authService authService,
+	authenticationMiddleware authenticationMiddleware,
+	logger commoninterfaces.Logger,
+) *Handler {
 	return &Handler{
-		logger:      logger,
-		authService: authService,
+		logger:                   logger,
+		authService:              authService,
+		authenticationMiddleware: authenticationMiddleware,
 	}
 }
 
@@ -103,6 +109,22 @@ func (ah *Handler) Login(w http.ResponseWriter, r *http.Request) error {
 
 	http.SetCookie(w, &cookie)
 	response.Send(w, http.StatusOK, map[string]string{"token": accessToken})
+
+	return nil
+}
+
+func (ah *Handler) Verify(w http.ResponseWriter, r *http.Request) error {
+	ctx, cancel := context.WithTimeout(r.Context(), authTimeout)
+	defer cancel()
+
+	r = r.WithContext(ctx)
+
+	r, err := ah.authenticationMiddleware.VerifyToken(r)
+	if err != nil {
+		return ah.handleTimeout(err, r.URL.Path)
+	}
+
+	response.Send(w, http.StatusNoContent, nil)
 
 	return nil
 }

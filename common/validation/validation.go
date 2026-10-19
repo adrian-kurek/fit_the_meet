@@ -12,14 +12,12 @@ func ValidateRequestData(dataFromRequest any) error {
 	validate := validator.New(validator.WithRequiredStructEnabled())
 	err := validate.Struct(dataFromRequest)
 	if err != nil {
-		var invalidValidationError *validator.InvalidValidationError
-		if validationErrs, ok := errors.AsType[validator.ValidationErrors](invalidValidationError); ok {
-			return validationErrs
+		if _, ok := errors.AsType[*validator.InvalidValidationError](err); ok {
+			return commonerrors.Validation("invalid request data")
 		}
 
-		var validateErrs validator.ValidationErrors
-		if validationErrs, ok := errors.AsType[validator.ValidationErrors](validateErrs); ok {
-			for _, e := range validationErrs {
+		if validateErrs, ok := errors.AsType[validator.ValidationErrors](err); ok {
+			for _, e := range validateErrs {
 				switch e.Tag() {
 				case "required":
 					return commonerrors.Validation(

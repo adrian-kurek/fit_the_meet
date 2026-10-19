@@ -1,22 +1,46 @@
 package main
 
 import (
+	"context"
+	"database/sql"
+	"errors"
+	"net/http"
+	"os"
+	"os/signal"
+
+	commoninterfaces "github.com/adrian-kurek/fit_the_meet/common/interfaces"
 	"github.com/adrian-kurek/fit_the_meet/common/logger"
 	"github.com/adrian-kurek/fit_the_meet/config"
+	"github.com/adrian-kurek/fit_the_meet/internal/auth"
+	"github.com/adrian-kurek/fit_the_meet/internal/server"
+	"github.com/adrian-kurek/fit_the_meet/internal/user"
 	"github.com/joho/godotenv"
 )
+
+func bootstrapHTTPServer(db *sql.DB, port string, logger commoninterfaces.Logger) *server.HTTP {
+	authRepository := auth.NewRepository(db, logger)
+	userRepository := user.NewRepository(db, logger)
+	authService := auth.NewService(authRepository, userRepository, logger)
+	authHandler := auth.NewHandler(authService, logger)
+	dependenciesConfig := server.NewDependencyConfig(
+		port,
+		logger,
+		authHandler,
+	)
+	return server.NewHTTP(dependenciesConfig)
+}
 
 func main() {
 	logger := logger.Setup()
 	err := godotenv.Load()
 	if err != nil {
-		logger.Error("failed to load environment variables", "err:", err.Error())
+		logger.Error("failed to load environment variables", "err", err.Error())
 		panic(err)
 	}
 
 	db, err := config.ConnectToDB()
 	if err != nil {
-		logger.Error("failed to connect to databse service", "err:", err.Error())
+		logger.Error("failed to connect to databse service", "err", err.Error())
 		panic(err)
 	}
 
@@ -24,10 +48,41 @@ func main() {
 
 	cacheService, err := config.ConnectToCache()
 	if err != nil {
-		logger.Error("failed to connect to cache service", "err:", err.Error())
+		logger.Error("failed to connect to cache service", "err", err.Error())
 		panic(err)
 	}
 	defer cacheService.Close()
 
-	logger.Info("started successfully")
+	port := os.Getenv("PORT")
+
+	httpServer := bootstrapHTTPServer(db.Connection, port, logger)
+	apiCtx, apiCtxCancel := context.WithCancel(context.Background())
+	go func() {
+		logger.Info("server started", "port", port)
+		if err = httpServer.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Error("Failed to start server", "err", err)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt)
+	<-quit
+	defer apiCtxCancel()
+
+	if err = httpServer.Shutdown(apiCtx); err != nil {
+		logger.Error("Server forced to shutdown", "err", err)
+		if err != nil {
+			panic(err)
+		}
+		err = db.Close()
+		if err != nil {
+			panic(err)
+		}
+		err = cacheService.Close()
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	logger.Info("server exited")
 }

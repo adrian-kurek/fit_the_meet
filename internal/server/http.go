@@ -5,6 +5,9 @@ import (
 	"context"
 	"net/http"
 	"time"
+
+	commoninterfaces "github.com/adrian-kurek/fit_the_meet/common/interfaces"
+	"github.com/adrian-kurek/fit_the_meet/internal/auth"
 )
 
 const (
@@ -13,15 +16,25 @@ const (
 	defaultIdleTimeout  = 30 * time.Second
 )
 
+type authHandler interface {
+	Register(w http.ResponseWriter, r *http.Request) error
+}
+
 type DependencyConfig struct {
-	port string
+	port        string
+	logger      commoninterfaces.Logger
+	authHandler authHandler
 }
 
 func NewDependencyConfig(
 	port string,
+	logger commoninterfaces.Logger,
+	authHandler authHandler,
 ) *DependencyConfig {
 	return &DependencyConfig{
-		port: port,
+		port:        port,
+		logger:      logger,
+		authHandler: authHandler,
 	}
 }
 
@@ -51,6 +64,8 @@ func (h *HTTP) Start() error {
 }
 
 func (h *HTTP) SetupRoutes() {
+	authRoute := auth.NewRoutes(h.config.authHandler, h.config.logger)
+	authRoute.Setup(h.router)
 }
 
 func (h *HTTP) Shutdown(ctx context.Context) error {

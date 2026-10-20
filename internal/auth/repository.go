@@ -24,6 +24,11 @@ func NewRepository(db *sql.DB, logger commoninterfaces.Logger) *Repository {
 	}
 }
 
+const (
+	queryMsg = "query"
+	errorMsg = "error"
+)
+
 func (ar *Repository) InsertRefreshToken(
 	ctx context.Context,
 	ipAddress string,
@@ -35,15 +40,15 @@ func (ar *Repository) InsertRefreshToken(
 
 	stmt, err := ar.db.PrepareContext(ctx, query)
 	if err != nil {
-		ar.logger.Error(commonerrors.FailedToPrepareQuery, map[string]string{
-			"query": query,
-			"error": err.Error(),
+		ar.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
+			queryMsg: query,
+			errorMsg: err.Error(),
 		})
 		return err
 	}
 	defer func() {
 		if closeErr := stmt.Close(); closeErr != nil {
-			ar.logger.Error(commonerrors.FailedToCloseStatement, closeErr)
+			ar.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
 		}
 	}()
 
@@ -52,14 +57,14 @@ func (ar *Repository) InsertRefreshToken(
 
 	_, err = stmt.ExecContext(ctx, userID, refreshToken, deviceInfo, ipAddress, expiration, lastUsedAt)
 	if err != nil {
-		ar.logger.Error(commonerrors.FailedToExecuteInsertQuery, map[string]any{
-			"query": query,
+		ar.logger.Error(commonerrors.FailedToExecuteInsertQuery, "data", map[string]any{
+			queryMsg: query,
 			"args": map[string]any{
 				"userId":     userID,
 				"deviceInfo": deviceInfo,
 				"ipAddress":  ipAddress,
 			},
-			"error": err,
+			errorMsg: err,
 		})
 		return err
 	}
@@ -84,8 +89,8 @@ func (ar *Repository) GetRefreshTokenByTokenHash(ctx context.Context, tokenHash 
 	stmt, err := ar.db.PrepareContext(ctx, query)
 	if err != nil {
 		ar.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
-			"query": query,
-			"error": err.Error(),
+			queryMsg: query,
+			errorMsg: err.Error(),
 		})
 		return TokenWithUser{}, err
 	}
@@ -112,8 +117,8 @@ func (ar *Repository) GetRefreshTokenByTokenHash(ctx context.Context, tokenHash 
 			return TokenWithUser{ID: 0}, nil
 		}
 		ar.logger.Error(commonerrors.FailedToExecuteSelectQuery, "data", map[string]string{
-			"query": query,
-			"error": err.Error(),
+			queryMsg: query,
+			errorMsg: err.Error(),
 		})
 		return TokenWithUser{}, err
 	}
@@ -128,8 +133,8 @@ func (ar *Repository) UpdateLastTimeUsedToken(ctx context.Context, refreshToken 
 	stmt, err := ar.db.PrepareContext(ctx, query)
 	if err != nil {
 		ar.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
-			"query": query,
-			"error": err.Error(),
+			queryMsg: query,
+			errorMsg: err.Error(),
 		})
 		return err
 	}
@@ -144,8 +149,8 @@ func (ar *Repository) UpdateLastTimeUsedToken(ctx context.Context, refreshToken 
 	_, err = stmt.ExecContext(ctx, lastUsedAt, refreshToken)
 	if err != nil {
 		ar.logger.Error(commonerrors.FailedToExecuteUpdateQuery, "data", map[string]string{
-			"query": query,
-			"error": err.Error(),
+			queryMsg: query,
+			errorMsg: err.Error(),
 		})
 		return err
 	}

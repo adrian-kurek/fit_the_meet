@@ -24,6 +24,8 @@ type authService interface {
 		deviceInfo string,
 	) (string, []byte, error)
 	RefreshAccessToken(ctx context.Context, refreshToken []byte) (string, error)
+	Logout(ctx context.Context, refreshToken []byte) error
+	LogoutFromAllDevices(ctx context.Context, userID int) error
 }
 
 type Handler struct {
@@ -160,6 +162,53 @@ func (ah *Handler) RefreshAccessToken(w http.ResponseWriter, r *http.Request) er
 	}
 
 	response.Send(w, http.StatusOK, map[string]string{"token": newAccessToken})
+
+	return nil
+}
+
+func (ah *Handler) Logout(w http.ResponseWriter, r *http.Request) error {
+	ctx, cancel := context.WithTimeout(r.Context(), authTimeout)
+	defer cancel()
+
+	err := ah.authenticationMiddleware.BlacklistUser(r)
+	if err != nil {
+		return ah.handleTimeout(err, r.URL.Path)
+	}
+
+	refreshToken, err := ah.readRefreshToken(r)
+	if err != nil {
+		return err
+	}
+
+	err = ah.authService.Logout(ctx, refreshToken)
+	if err != nil {
+		return ah.handleTimeout(err, r.URL.Path)
+	}
+
+	response.Send(w, http.StatusNoContent, nil)
+	return nil
+}
+
+func (ah *Handler) LogoutFromAllDevices(w http.ResponseWriter, r *http.Request) error {
+	ctx, cancel := context.WithTimeout(r.Context(), authTimeout)
+	defer cancel()
+
+	r, err := ah.authenticationMiddleware.VerifyToken(r)
+	if err != nil {
+		return ah.handleTimeout(err, r.URL.Path)
+	}
+
+	userID, err := request.ReadUserIDFromToken(r)
+	if err != nil {
+		return err
+	}
+
+	err = ah.authService.LogoutFromAllDevices(ctx, userID)
+	if err != nil {
+		return ah.handleTimeout(err, r.URL.Path)
+	}
+
+	response.Send(w, http.StatusNoContent, nil)
 
 	return nil
 }

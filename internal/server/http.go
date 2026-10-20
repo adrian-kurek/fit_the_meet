@@ -21,6 +21,8 @@ type authHandler interface {
 	Login(w http.ResponseWriter, r *http.Request) error
 	Verify(w http.ResponseWriter, r *http.Request) error
 	RefreshAccessToken(w http.ResponseWriter, r *http.Request) error
+	Logout(w http.ResponseWriter, r *http.Request) error
+	LogoutFromAllDevices(w http.ResponseWriter, r *http.Request) error
 }
 
 type DependencyConfig struct {

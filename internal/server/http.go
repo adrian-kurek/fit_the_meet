@@ -8,6 +8,7 @@ import (
 
 	commoninterfaces "github.com/adrian-kurek/fit_the_meet/common/interfaces"
 	"github.com/adrian-kurek/fit_the_meet/internal/auth"
+	"github.com/adrian-kurek/fit_the_meet/internal/group"
 )
 
 const (
@@ -25,21 +26,29 @@ type authHandler interface {
 	LogoutFromAllDevices(w http.ResponseWriter, r *http.Request) error
 }
 
+type groupHandler interface {
+	Create(w http.ResponseWriter, r *http.Request) error
+	UpdateName(w http.ResponseWriter, r *http.Request) error
+}
+
 type DependencyConfig struct {
-	port        string
-	logger      commoninterfaces.Logger
-	authHandler authHandler
+	port         string
+	logger       commoninterfaces.Logger
+	authHandler  authHandler
+	groupHandler groupHandler
 }
 
 func NewDependencyConfig(
 	port string,
 	logger commoninterfaces.Logger,
 	authHandler authHandler,
+	groupHandler groupHandler,
 ) *DependencyConfig {
 	return &DependencyConfig{
-		port:        port,
-		logger:      logger,
-		authHandler: authHandler,
+		port:         port,
+		logger:       logger,
+		authHandler:  authHandler,
+		groupHandler: groupHandler,
 	}
 }
 
@@ -71,6 +80,8 @@ func (h *HTTP) Start() error {
 func (h *HTTP) SetupRoutes() {
 	authRoute := auth.NewRoutes(h.config.authHandler, h.config.logger)
 	authRoute.Setup(h.router)
+	groupRoute := group.NewRoutes(h.config.groupHandler, h.config.logger)
+	groupRoute.Setup(h.router)
 }
 
 func (h *HTTP) Shutdown(ctx context.Context) error {

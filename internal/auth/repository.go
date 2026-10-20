@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 
 	commonerrors "github.com/adrian-kurek/fit_the_meet/common/errors"
@@ -59,6 +60,92 @@ func (ar *Repository) InsertRefreshToken(
 				"ipAddress":  ipAddress,
 			},
 			"error": err,
+		})
+		return err
+	}
+
+	return nil
+}
+
+func (ar *Repository) GetRefreshTokenByTokenHash(ctx context.Context, tokenHash string) (TokenWithUser, error) {
+	query := `
+	SELECT 
+		rt.id,
+		rt.user_id,
+		u.email,
+		u.username,
+		rt.token_hash,
+		rt.expires_at 
+	FROM refresh_tokens rt
+		INNER JOIN users u ON u.id = rt.user_id
+	WHERE
+		rt.token_hash = $1`
+
+	stmt, err := ar.db.PrepareContext(ctx, query)
+	if err != nil {
+		ar.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
+			"query": query,
+			"error": err.Error(),
+		})
+		return TokenWithUser{}, err
+	}
+	defer func() {
+		if closeErr := stmt.Close(); closeErr != nil {
+			ar.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
+		}
+	}()
+
+	row := stmt.QueryRowContext(ctx, tokenHash)
+
+	var tokenWithUser TokenWithUser
+	err = row.Scan(
+		&tokenWithUser.ID,
+		&tokenWithUser.UserID,
+		&tokenWithUser.Email,
+		&tokenWithUser.Username,
+		&tokenWithUser.TokenHash,
+		&tokenWithUser.ExpiresAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			ar.logger.Info("token not found")
+			return TokenWithUser{ID: 0}, nil
+		}
+		ar.logger.Error(commonerrors.FailedToExecuteSelectQuery, "data", map[string]string{
+			"query": query,
+			"error": err.Error(),
+		})
+		return TokenWithUser{}, err
+	}
+	return tokenWithUser, nil
+}
+
+func (ar *Repository) UpdateLastTimeUsedToken(ctx context.Context, refreshToken string) error {
+	query := `
+	UPDATE refresh_tokens SET last_used_at = $1 WHERE token_hash = $2	
+	`
+
+	stmt, err := ar.db.PrepareContext(ctx, query)
+	if err != nil {
+		ar.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
+			"query": query,
+			"error": err.Error(),
+		})
+		return err
+	}
+	defer func() {
+		if closeErr := stmt.Close(); closeErr != nil {
+			ar.logger.Error(commonerrors.FailedToCloseStatement, "data", closeErr)
+		}
+	}()
+
+	lastUsedAt := time.Now()
+
+	_, err = stmt.ExecContext(ctx, lastUsedAt, refreshToken)
+	if err != nil {
+		ar.logger.Error(commonerrors.FailedToExecuteUpdateQuery, "data", map[string]string{
+			"query": query,
+			"error": err.Error(),
 		})
 		return err
 	}

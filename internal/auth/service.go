@@ -2,7 +2,9 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"time"
 
 	commonerrors "github.com/adrian-kurek/fit_the_meet/common/errors"
 	commoninterfaces "github.com/adrian-kurek/fit_the_meet/common/interfaces"
@@ -19,6 +21,8 @@ type (
 			refreshToken string,
 			userID int,
 		) error
+		GetRefreshTokenByTokenHash(ctx context.Context, tokenHash string) (TokenWithUser, error)
+		UpdateLastTimeUsedToken(ctx context.Context, refreshToken string) error
 	}
 	userRepository interface {
 		CheckDoesExistByEmail(ctx context.Context, email string) (bool, error)
@@ -125,4 +129,50 @@ func (as *Service) Login(
 	}
 
 	return accessToken, refreshToken, nil
+}
+
+func (as *Service) validateToken(tokenWithUser TokenWithUser) error {
+	if tokenWithUser.ID == 0 {
+		err := errors.New("token not found")
+		as.logger.Info(err.Error(), nil)
+		return commonerrors.Unauthorized(err.Error())
+	}
+
+	if tokenWithUser.ExpiresAt.Before(time.Now()) {
+		err := errors.New("refresh token expired")
+		as.logger.Info(err.Error(), nil)
+		return commonerrors.Unauthorized(err.Error())
+	}
+	return nil
+}
+
+func (as *Service) RefreshAccessToken(ctx context.Context, refreshToken []byte) (string, error) {
+	hashedRefreshToken := as.authenticationMiddleware.HashToken(refreshToken)
+	tokenWithUser, err := as.authRepository.GetRefreshTokenByTokenHash(ctx, hashedRefreshToken)
+	if err != nil {
+		return "", err
+	}
+
+	err = as.validateToken(tokenWithUser)
+	if err != nil {
+		return "", err
+	}
+
+	err = as.authRepository.UpdateLastTimeUsedToken(ctx, hashedRefreshToken)
+	if err != nil {
+		return "", err
+	}
+
+	user := user.Instance{
+		ID:       tokenWithUser.ID,
+		Email:    tokenWithUser.Email,
+		Username: tokenWithUser.Username,
+	}
+
+	accessToken, err := as.authenticationMiddleware.GenerateAccessToken(user)
+	if err != nil {
+		return "", err
+	}
+
+	return accessToken, nil
 }

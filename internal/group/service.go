@@ -9,6 +9,7 @@ import (
 type groupRepository interface {
 	Insert(ctx context.Context, name string, userID int) error
 	UpdateName(ctx context.Context, name string, groupID, userID int) error
+	Delete(ctx context.Context, groupID, userID int) error
 }
 
 type Service struct {
@@ -29,4 +30,8 @@ func (gs *Service) Create(ctx context.Context, name string, userID int) error {
 
 func (gs *Service) UpdateName(ctx context.Context, name string, groupID, userID int) error {
 	return gs.groupRepository.UpdateName(ctx, name, groupID, userID)
+}
+
+func (gs *Service) Remove(ctx context.Context, groupID, userID int) error {
+	return gs.groupRepository.Delete(ctx, groupID, userID)
 }

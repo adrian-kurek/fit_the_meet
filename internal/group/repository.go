@@ -9,8 +9,10 @@ import (
 )
 
 const (
-	queryMsg = "query"
-	errorMsg = "error"
+	queryMsg  = "query"
+	errorMsg  = "error"
+	argsMsg   = "args"
+	userIDMsg = "userId"
 )
 
 type Repository struct {
@@ -46,9 +48,9 @@ func (gr *Repository) Insert(ctx context.Context, name string, userID int) error
 	if err != nil {
 		gr.logger.Error(commonerrors.FailedToExecuteInsertQuery, "data", map[string]any{
 			queryMsg: query,
-			"args": map[string]any{
-				"userId": userID,
-				"name":   name,
+			argsMsg: map[string]any{
+				userIDMsg: userID,
+				"name":    name,
 			},
 			errorMsg: err,
 		})
@@ -79,10 +81,43 @@ func (gr *Repository) UpdateName(ctx context.Context, name string, groupID, user
 	if err != nil {
 		gr.logger.Error(commonerrors.FailedToExecuteUpdateQuery, "data", map[string]any{
 			queryMsg: query,
-			"args": map[string]any{
-				"userId":  userID,
+			argsMsg: map[string]any{
+				userIDMsg: userID,
 				"groupID": groupID,
 				"name":    name,
+			},
+			errorMsg: err,
+		})
+		return err
+	}
+
+	return nil
+}
+
+func (gr *Repository) Delete(ctx context.Context, groupID, userID int) error {
+	query := "DELETE FROM groups WHERE id=$1 AND created_by = $2"
+
+	stmt, err := gr.db.PrepareContext(ctx, query)
+	if err != nil {
+		gr.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
+			queryMsg: query,
+			errorMsg: err.Error(),
+		})
+		return err
+	}
+	defer func() {
+		if closeErr := stmt.Close(); closeErr != nil {
+			gr.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
+		}
+	}()
+
+	_, err = stmt.ExecContext(ctx, groupID, userID)
+	if err != nil {
+		gr.logger.Error(commonerrors.FailedToExecuteDeleteQuery, "data", map[string]any{
+			queryMsg: query,
+			argsMsg: map[string]any{
+				userIDMsg: userID,
+				"groupID": groupID,
 			},
 			errorMsg: err,
 		})

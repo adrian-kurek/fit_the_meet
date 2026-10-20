@@ -29,6 +29,7 @@ type authHandler interface {
 type groupHandler interface {
 	Create(w http.ResponseWriter, r *http.Request) error
 	UpdateName(w http.ResponseWriter, r *http.Request) error
+	Remove(w http.ResponseWriter, r *http.Request) error
 }
 
 type DependencyConfig struct {

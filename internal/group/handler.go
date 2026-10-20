@@ -20,6 +20,7 @@ type (
 	groupService interface {
 		Create(ctx context.Context, name string, userID int) error
 		UpdateName(ctx context.Context, name string, groupID, userID int) error
+		Remove(ctx context.Context, groupID, userID int) error
 	}
 	authenticationMiddleware interface {
 		VerifyToken(r *http.Request) (*http.Request, error)
@@ -116,6 +117,35 @@ func (gh *Handler) UpdateName(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	err = gh.groupService.UpdateName(ctx, reqData.Name, groupID, userID)
+	if err != nil {
+		return gh.handleTimeout(err, r.URL.Path)
+	}
+
+	response.Send(w, http.StatusNoContent, nil)
+
+	return nil
+}
+
+func (gh *Handler) Remove(w http.ResponseWriter, r *http.Request) error {
+	ctx, cancel := context.WithTimeout(r.Context(), groupTimeout)
+	defer cancel()
+
+	r, err := gh.authenticationMiddleware.VerifyToken(r)
+	if err != nil {
+		return gh.handleTimeout(err, r.URL.Path)
+	}
+
+	userID, err := request.ReadUserIDFromToken(r)
+	if err != nil {
+		return err
+	}
+
+	groupID, err := strconv.Atoi(r.PathValue("groupID"))
+	if err != nil {
+		return err
+	}
+
+	err = gh.groupService.Remove(ctx, groupID, userID)
 	if err != nil {
 		return gh.handleTimeout(err, r.URL.Path)
 	}

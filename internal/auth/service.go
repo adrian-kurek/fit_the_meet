@@ -23,6 +23,8 @@ type (
 		) error
 		GetRefreshTokenByTokenHash(ctx context.Context, tokenHash string) (TokenWithUser, error)
 		UpdateLastTimeUsedToken(ctx context.Context, refreshToken string) error
+		RemoveTokenByToken(ctx context.Context, refreshToken string) error
+		RemoveTokensByUserID(ctx context.Context, userID int) error
 	}
 	userRepository interface {
 		CheckDoesExistByEmail(ctx context.Context, email string) (bool, error)
@@ -175,4 +177,24 @@ func (as *Service) RefreshAccessToken(ctx context.Context, refreshToken []byte) 
 	}
 
 	return accessToken, nil
+}
+
+func (as *Service) Logout(ctx context.Context, refreshToken []byte) error {
+	hashedRefreshToken := as.authenticationMiddleware.HashToken(refreshToken)
+
+	err := as.authRepository.RemoveTokenByToken(ctx, hashedRefreshToken)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (as *Service) LogoutFromAllDevices(ctx context.Context, userID int) error {
+	err := as.authRepository.RemoveTokensByUserID(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

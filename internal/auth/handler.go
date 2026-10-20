@@ -23,6 +23,7 @@ type authService interface {
 		ipAddress string,
 		deviceInfo string,
 	) (string, []byte, error)
+	RefreshAccessToken(ctx context.Context, refreshToken []byte) (string, error)
 }
 
 type Handler struct {
@@ -125,6 +126,40 @@ func (ah *Handler) Verify(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	response.Send(w, http.StatusNoContent, nil)
+
+	return nil
+}
+
+func (ah *Handler) readRefreshToken(r *http.Request) ([]byte, error) {
+	refreshToken, err := r.Cookie("refreshToken")
+	if err != nil {
+		ah.logger.Error("failed to read cookie from request", "err", err.Error())
+		return nil, err
+	}
+
+	tokenBytes, err := hex.DecodeString(refreshToken.Value)
+	if err != nil {
+		ah.logger.Error("failed to decode string into bytes", "err", err.Error())
+		return nil, err
+	}
+	return tokenBytes, nil
+}
+
+func (ah *Handler) RefreshAccessToken(w http.ResponseWriter, r *http.Request) error {
+	ctx, cancel := context.WithTimeout(r.Context(), authTimeout)
+	defer cancel()
+
+	refreshToken, err := ah.readRefreshToken(r)
+	if err != nil {
+		return err
+	}
+
+	newAccessToken, err := ah.authService.RefreshAccessToken(ctx, refreshToken)
+	if err != nil {
+		return ah.handleTimeout(err, r.URL.Path)
+	}
+
+	response.Send(w, http.StatusOK, map[string]string{"token": newAccessToken})
 
 	return nil
 }

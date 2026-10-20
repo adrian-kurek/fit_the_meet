@@ -33,7 +33,7 @@ func (ur *Repository) CheckDoesExistByEmail(ctx context.Context, email string) (
 
 	stmt, err := ur.db.PrepareContext(ctx, query)
 	if err != nil {
-		ur.logger.Error(commonerrors.FailedToPrepareQuery, map[string]string{
+		ur.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
 			queryMsg: query,
 			errorMsg: err.Error(),
 		})
@@ -41,7 +41,7 @@ func (ur *Repository) CheckDoesExistByEmail(ctx context.Context, email string) (
 	}
 	defer func() {
 		if closeErr := stmt.Close(); closeErr != nil {
-			ur.logger.Error(commonerrors.FailedToCloseStatement, closeErr)
+			ur.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
 		}
 	}()
 
@@ -53,7 +53,7 @@ func (ur *Repository) CheckDoesExistByEmail(ctx context.Context, email string) (
 		if errors.Is(err, sql.ErrNoRows) {
 			doesExist = false
 		} else {
-			ur.logger.Error(commonerrors.FailedToExecuteSelectQuery, map[string]any{
+			ur.logger.Error(commonerrors.FailedToExecuteSelectQuery, "data", map[string]any{
 				queryMsg: query,
 				argsMsg: map[string]string{
 					emailMsg: email,
@@ -72,7 +72,7 @@ func (ur *Repository) Insert(ctx context.Context, username, email, password stri
 
 	stmt, err := ur.db.PrepareContext(ctx, query)
 	if err != nil {
-		ur.logger.Error(commonerrors.FailedToPrepareQuery, map[string]string{
+		ur.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
 			queryMsg: query,
 			errorMsg: err.Error(),
 		})
@@ -80,13 +80,13 @@ func (ur *Repository) Insert(ctx context.Context, username, email, password stri
 	}
 	defer func() {
 		if closeErr := stmt.Close(); closeErr != nil {
-			ur.logger.Error(commonerrors.FailedToCloseStatement, closeErr)
+			ur.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
 		}
 	}()
 
 	_, err = stmt.ExecContext(ctx, username, email, password)
 	if err != nil {
-		ur.logger.Error(commonerrors.FailedToExecuteInsertQuery, map[string]any{
+		ur.logger.Error(commonerrors.FailedToExecuteInsertQuery, "data", map[string]any{
 			queryMsg: query,
 			argsMsg: map[string]string{
 				"username": username,
@@ -105,7 +105,7 @@ func (ur *Repository) GetByEmail(ctx context.Context, email string) (Instance, e
 
 	stmt, err := ur.db.PrepareContext(ctx, query)
 	if err != nil {
-		ur.logger.Error(commonerrors.FailedToPrepareQuery, map[string]string{
+		ur.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
 			queryMsg: query,
 			errorMsg: err.Error(),
 		})
@@ -113,7 +113,7 @@ func (ur *Repository) GetByEmail(ctx context.Context, email string) (Instance, e
 	}
 	defer func() {
 		if closeErr := stmt.Close(); closeErr != nil {
-			ur.logger.Error(commonerrors.FailedToCloseStatement, closeErr)
+			ur.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
 		}
 	}()
 
@@ -124,7 +124,7 @@ func (ur *Repository) GetByEmail(ctx context.Context, email string) (Instance, e
 		if errors.Is(err, sql.ErrNoRows) {
 			return Instance{}, commonerrors.NotFound("failed to find user with provided email")
 		}
-		ur.logger.Error(commonerrors.FailedToExecuteSelectQuery, map[string]any{
+		ur.logger.Error(commonerrors.FailedToExecuteSelectQuery, "data", map[string]any{
 			queryMsg: query,
 			argsMsg: map[string]string{
 				"email": email,

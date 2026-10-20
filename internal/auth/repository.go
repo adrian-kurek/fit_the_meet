@@ -157,3 +157,61 @@ func (ar *Repository) UpdateLastTimeUsedToken(ctx context.Context, refreshToken 
 
 	return nil
 }
+
+func (ar *Repository) RemoveTokenByToken(ctx context.Context, refreshToken string) error {
+	query := "DELETE FROM refresh_tokens WHERE token_hash = $1"
+
+	stmt, err := ar.db.PrepareContext(ctx, query)
+	if err != nil {
+		ar.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
+			queryMsg: query,
+			errorMsg: err.Error(),
+		})
+		return err
+	}
+	defer func() {
+		if closeErr := stmt.Close(); closeErr != nil {
+			ar.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
+		}
+	}()
+
+	_, err = stmt.ExecContext(ctx, refreshToken)
+	if err != nil {
+		ar.logger.Error(commonerrors.FailedToExecuteDeleteQuery, "data", map[string]string{
+			queryMsg: query,
+			errorMsg: err.Error(),
+		})
+		return err
+	}
+
+	return nil
+}
+
+func (ar *Repository) RemoveTokensByUserID(ctx context.Context, userID int) error {
+	query := "DELETE FROM refresh_tokens WHERE user_id = $1"
+
+	stmt, err := ar.db.PrepareContext(ctx, query)
+	if err != nil {
+		ar.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
+			queryMsg: query,
+			errorMsg: err.Error(),
+		})
+		return err
+	}
+	defer func() {
+		if closeErr := stmt.Close(); closeErr != nil {
+			ar.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
+		}
+	}()
+
+	_, err = stmt.ExecContext(ctx, userID)
+	if err != nil {
+		ar.logger.Error(commonerrors.FailedToExecuteDeleteQuery, "data", map[string]string{
+			"query": query,
+			"error": err.Error(),
+		})
+		return err
+	}
+
+	return nil
+}

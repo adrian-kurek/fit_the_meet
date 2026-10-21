@@ -3,6 +3,7 @@ package group
 import (
 	"context"
 	"database/sql"
+	"time"
 
 	commonerrors "github.com/adrian-kurek/fit_the_meet/common/errors"
 	commoninterfaces "github.com/adrian-kurek/fit_the_meet/common/interfaces"
@@ -130,7 +131,7 @@ func (gr *Repository) Delete(ctx context.Context, groupID, userID int) error {
 }
 
 func (gr *Repository) RemoveParticipants(ctx context.Context, groupID, userID int, participants []int) error {
-	const query = `DELETE FROM group_participants gp USING groups g
+	query := `DELETE FROM group_participants gp USING groups g
 		WHERE gp.group_id = g.id
 		AND gp.user_id = ANY($1)
 		AND g.id = $2
@@ -159,6 +160,75 @@ func (gr *Repository) RemoveParticipants(ctx context.Context, groupID, userID in
 				userIDMsg:        userID,
 				groupIDMsg:       groupID,
 				"participantIDs": participants,
+			},
+			errorMsg: err,
+		})
+		return err
+	}
+
+	return nil
+}
+
+func (gr *Repository) IsUserOwnerOfTheGroup(ctx context.Context, groupID, userID int) error {
+	query := `SELECT id FROM groups WHERE group_id = $1 AND created_by = $2`
+
+	stmt, err := gr.db.PrepareContext(ctx, query)
+	if err != nil {
+		gr.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
+			queryMsg: query,
+			errorMsg: err.Error(),
+		})
+		return err
+	}
+	defer func() {
+		if closeErr := stmt.Close(); closeErr != nil {
+			gr.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
+		}
+	}()
+
+	var groupIDFromDB bool
+
+	err = stmt.QueryRowContext(ctx, groupID, userID).Scan(&groupIDFromDB)
+	if err != nil {
+		gr.logger.Error(commonerrors.FailedToExecuteSelectQuery, "data", map[string]any{
+			queryMsg: query,
+			argsMsg: map[string]any{
+				userIDMsg:  userID,
+				groupIDMsg: groupID,
+			},
+			errorMsg: err,
+		})
+		return err
+	}
+
+	return nil
+}
+
+func (gr *Repository) InsertActivationCode(ctx context.Context, groupID int, code string, expiresAt time.Time) error {
+	query := "INSERT INTO group_activation_codes(group_id,code,expires_at) VALUES($1,$2,$3)"
+
+	stmt, err := gr.db.PrepareContext(ctx, query)
+	if err != nil {
+		gr.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
+			queryMsg: query,
+			errorMsg: err.Error(),
+		})
+		return err
+	}
+	defer func() {
+		if closeErr := stmt.Close(); closeErr != nil {
+			gr.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
+		}
+	}()
+
+	_, err = stmt.ExecContext(ctx, groupID, code, expiresAt)
+	if err != nil {
+		gr.logger.Error(commonerrors.FailedToExecuteInsertQuery, "data", map[string]any{
+			queryMsg: query,
+			argsMsg: map[string]any{
+				groupIDMsg:  groupID,
+				"code":      code,
+				"expiresAt": expiresAt,
 			},
 			errorMsg: err,
 		})

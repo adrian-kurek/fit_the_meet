@@ -2,7 +2,11 @@ package group
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"net/http"
 
+	commonerrors "github.com/adrian-kurek/fit_the_meet/common/errors"
 	commoninterfaces "github.com/adrian-kurek/fit_the_meet/common/interfaces"
 )
 
@@ -11,6 +15,7 @@ type groupRepository interface {
 	UpdateName(ctx context.Context, name string, groupID, userID int) error
 	Delete(ctx context.Context, groupID, userID int) error
 	RemoveParticipants(ctx context.Context, groupID, userID int, participants []int) error
+	IsUserOwnerOfTheGroup(ctx context.Context, groupID, userID int) error
 }
 
 type Service struct {
@@ -39,4 +44,23 @@ func (gs *Service) Remove(ctx context.Context, groupID, userID int) error {
 
 func (gs *Service) RemoveParticipants(ctx context.Context, groupID, userID int, participants []int) error {
 	return gs.groupRepository.RemoveParticipants(ctx, groupID, userID, participants)
+}
+
+func (gs *Service) GenerateInviteLink(ctx context.Context, groupID, userID int) (string, error) {
+	err := gs.groupRepository.IsUserOwnerOfTheGroup(ctx, groupID, userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", commonerrors.NewAPI(
+				http.StatusForbidden,
+				commonerrors.CategoryForbidden,
+				"user is not allowed to perform this action",
+				true,
+			)
+		}
+		return "", err
+	}
+
+	// code := uuid.New().String()
+
+	return "", nil
 }

@@ -1,6 +1,6 @@
 -- +goose Up
 -- +goose StatementBegin
-CREATE TABLE IF NOT EXISTS group_participants 
+CREATE TABLE IF NOT EXISTS group_activation_codes 
 (
     id           SERIAL PRIMARY KEY,
     group_id      INTEGER      NOT NULL
@@ -16,5 +16,5 @@ CREATE TABLE IF NOT EXISTS group_participants
 
 -- +goose Down
 -- +goose StatementBegin
-DROP TABLE IF EXISTS group_participants;
+DROP TABLE IF EXISTS group_activation_codes;
 -- +goose StatementEnd

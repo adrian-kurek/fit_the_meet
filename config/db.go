@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	_ "github.com/lib/pq" //nolint:revive // Registers the PostgreSQL driver for database/sql.
+	_ "github.com/lib/pq" // Registers the PostgreSQL driver for database/sql.
 )
 
 const (

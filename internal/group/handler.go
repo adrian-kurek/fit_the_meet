@@ -21,6 +21,7 @@ type (
 		Create(ctx context.Context, name string, userID int) error
 		UpdateName(ctx context.Context, name string, groupID, userID int) error
 		Remove(ctx context.Context, groupID, userID int) error
+		RemoveParticipants(ctx context.Context, groupID, userID int, participants []int) error
 	}
 	authenticationMiddleware interface {
 		VerifyToken(r *http.Request) (*http.Request, error)
@@ -152,5 +153,43 @@ func (gh *Handler) Remove(w http.ResponseWriter, r *http.Request) error {
 
 	response.Send(w, http.StatusNoContent, nil)
 
+	return nil
+}
+
+func (gh *Handler) RemoveParticipants(w http.ResponseWriter, r *http.Request) error {
+	ctx, cancel := context.WithTimeout(r.Context(), groupTimeout)
+	defer cancel()
+
+	r, err := gh.authenticationMiddleware.VerifyToken(r)
+	if err != nil {
+		return gh.handleTimeout(err, r.URL.Path)
+	}
+
+	userID, err := request.ReadUserIDFromToken(r)
+	if err != nil {
+		return err
+	}
+
+	groupID, err := strconv.Atoi(r.PathValue("groupID"))
+	if err != nil {
+		return err
+	}
+
+	reqData, err := request.ReadBody[RemoveParticipants](r)
+	if err != nil {
+		return commonerrors.Validation("provided invalid json format")
+	}
+
+	err = validation.ValidateRequestData(reqData)
+	if err != nil {
+		return err
+	}
+
+	err = gh.groupService.RemoveParticipants(ctx, groupID, userID, reqData.UserIDs)
+	if err != nil {
+		return gh.handleTimeout(err, r.URL.Path)
+	}
+
+	response.Send(w, http.StatusNoContent, nil)
 	return nil
 }

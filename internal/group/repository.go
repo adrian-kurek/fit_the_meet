@@ -6,13 +6,15 @@ import (
 
 	commonerrors "github.com/adrian-kurek/fit_the_meet/common/errors"
 	commoninterfaces "github.com/adrian-kurek/fit_the_meet/common/interfaces"
+	"github.com/lib/pq"
 )
 
 const (
-	queryMsg  = "query"
-	errorMsg  = "error"
-	argsMsg   = "args"
-	userIDMsg = "userId"
+	queryMsg   = "query"
+	errorMsg   = "error"
+	argsMsg    = "args"
+	userIDMsg  = "userID"
+	groupIDMsg = "groupID"
 )
 
 type Repository struct {
@@ -82,9 +84,9 @@ func (gr *Repository) UpdateName(ctx context.Context, name string, groupID, user
 		gr.logger.Error(commonerrors.FailedToExecuteUpdateQuery, "data", map[string]any{
 			queryMsg: query,
 			argsMsg: map[string]any{
-				userIDMsg: userID,
-				"groupID": groupID,
-				"name":    name,
+				userIDMsg:  userID,
+				groupIDMsg: groupID,
+				"name":     name,
 			},
 			errorMsg: err,
 		})
@@ -116,8 +118,47 @@ func (gr *Repository) Delete(ctx context.Context, groupID, userID int) error {
 		gr.logger.Error(commonerrors.FailedToExecuteDeleteQuery, "data", map[string]any{
 			queryMsg: query,
 			argsMsg: map[string]any{
-				userIDMsg: userID,
-				"groupID": groupID,
+				userIDMsg:  userID,
+				groupIDMsg: groupID,
+			},
+			errorMsg: err,
+		})
+		return err
+	}
+
+	return nil
+}
+
+func (gr *Repository) RemoveParticipants(ctx context.Context, groupID, userID int, participants []int) error {
+	const query = `DELETE FROM group_participants gp USING groups g
+		WHERE gp.group_id = g.id
+		AND gp.user_id = ANY($1)
+		AND g.id = $2
+		AND g.created_by = $3`
+	args := []any{pq.Array(participants), groupID, userID}
+
+	stmt, err := gr.db.PrepareContext(ctx, query)
+	if err != nil {
+		gr.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
+			queryMsg: query,
+			errorMsg: err.Error(),
+		})
+		return err
+	}
+	defer func() {
+		if closeErr := stmt.Close(); closeErr != nil {
+			gr.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
+		}
+	}()
+
+	_, err = stmt.ExecContext(ctx, args...)
+	if err != nil {
+		gr.logger.Error(commonerrors.FailedToExecuteDeleteQuery, "data", map[string]any{
+			queryMsg: query,
+			argsMsg: map[string]any{
+				userIDMsg:        userID,
+				groupIDMsg:       groupID,
+				"participantIDs": participants,
 			},
 			errorMsg: err,
 		})

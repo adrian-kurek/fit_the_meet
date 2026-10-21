@@ -10,6 +10,7 @@ type groupRepository interface {
 	Insert(ctx context.Context, name string, userID int) error
 	UpdateName(ctx context.Context, name string, groupID, userID int) error
 	Delete(ctx context.Context, groupID, userID int) error
+	RemoveParticipants(ctx context.Context, groupID, userID int, participants []int) error
 }
 
 type Service struct {
@@ -34,4 +35,8 @@ func (gs *Service) UpdateName(ctx context.Context, name string, groupID, userID 
 
 func (gs *Service) Remove(ctx context.Context, groupID, userID int) error {
 	return gs.groupRepository.Delete(ctx, groupID, userID)
+}
+
+func (gs *Service) RemoveParticipants(ctx context.Context, groupID, userID int, participants []int) error {
+	return gs.groupRepository.RemoveParticipants(ctx, groupID, userID, participants)
 }

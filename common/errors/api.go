@@ -15,6 +15,7 @@ const (
 	CategoryInternal         Category = "INTERNAL"
 	CategoryRequestTimeout   Category = "REQUEST_TIMEOUT"
 	CategoryMethodNotAllowed Category = "METHOD_NOT_ALLOWED"
+	CategoryForbidden        Category = "FORBIDDEN"
 )
 
 type API struct {

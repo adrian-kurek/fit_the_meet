@@ -13,6 +13,7 @@ import (
 	"github.com/adrian-kurek/fit_the_meet/common/logger"
 	"github.com/adrian-kurek/fit_the_meet/config"
 	"github.com/adrian-kurek/fit_the_meet/internal/auth"
+	"github.com/adrian-kurek/fit_the_meet/internal/group"
 	"github.com/adrian-kurek/fit_the_meet/internal/server"
 	"github.com/adrian-kurek/fit_the_meet/internal/user"
 	"github.com/joho/godotenv"
@@ -34,10 +35,15 @@ func bootstrapHTTPServer(
 	)
 	authService := auth.NewService(authRepository, userRepository, authenticationMiddleware, logger)
 	authHandler := auth.NewHandler(authService, authenticationMiddleware, logger)
+
+	groupRepository := group.NewRepository(db, logger)
+	groupService := group.NewService(groupRepository, logger)
+	groupHandler := group.NewHandler(groupService, authenticationMiddleware, logger)
 	dependenciesConfig := server.NewDependencyConfig(
 		port,
 		logger,
 		authHandler,
+		groupHandler,
 	)
 	return server.NewHTTP(dependenciesConfig)
 }

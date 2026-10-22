@@ -111,3 +111,23 @@ func (eh *Handler) ChangeStatus(w http.ResponseWriter, r *http.Request) error {
 	response.Send(w, http.StatusCreated, nil)
 	return nil
 }
+
+// func (eh *Handler) AddTimeBlock(w http.ResponseWriter, r *http.Request) {
+// 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+// 	defer cancel()
+//
+// 	r, err := eh.authenticationMiddleware.VerifyToken(r)
+// 	if err != nil {
+// 		return eh.handleTimeout(err, r.URL.Path)
+// 	}
+//
+// 	userID, err := request.ReadUserIDFromToken(r)
+// 	if err != nil {
+// 		return err
+// 	}
+//
+// 	eventID, err := strconv.Atoi(r.PathValue("eventID"))
+// 	if err != nil {
+// 		return err
+// 	}
+// }

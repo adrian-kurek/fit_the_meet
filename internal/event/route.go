@@ -1,0 +1,33 @@
+package event
+
+import (
+	"fmt"
+	"net/http"
+
+	commoninterfaces "github.com/adrian-kurek/fit_the_meet/common/interfaces"
+	"github.com/adrian-kurek/fit_the_meet/common/request"
+)
+
+type eventHandler interface {
+	Create(w http.ResponseWriter, r *http.Request) error
+	ChangeStatus(w http.ResponseWriter, r *http.Request) error
+}
+
+type Routes struct {
+	eventHandler eventHandler
+	logger       commoninterfaces.Logger
+}
+
+func NewRoutes(eventHandler eventHandler, logger commoninterfaces.Logger) *Routes {
+	return &Routes{
+		eventHandler: eventHandler,
+		logger:       logger,
+	}
+}
+
+func (er *Routes) Setup(router *http.ServeMux) {
+	prefix := "/events"
+
+	router.Handle(fmt.Sprintf("POST %s/", prefix), request.Make(er.eventHandler.Create, er.logger))
+	router.Handle(fmt.Sprintf("PATCH %s/{eventID}", prefix), request.Make(er.eventHandler.ChangeStatus, er.logger))
+}

@@ -170,7 +170,7 @@ func (gr *Repository) RemoveParticipants(ctx context.Context, groupID, userID in
 }
 
 func (gr *Repository) IsUserOwnerOfTheGroup(ctx context.Context, groupID, userID int) error {
-	query := `SELECT id FROM groups WHERE group_id = $1 AND created_by = $2`
+	query := `SELECT id FROM groups WHERE id = $1 AND created_by = $2`
 
 	stmt, err := gr.db.PrepareContext(ctx, query)
 	if err != nil {
@@ -186,7 +186,7 @@ func (gr *Repository) IsUserOwnerOfTheGroup(ctx context.Context, groupID, userID
 		}
 	}()
 
-	var groupIDFromDB bool
+	var groupIDFromDB int
 
 	err = stmt.QueryRowContext(ctx, groupID, userID).Scan(&groupIDFromDB)
 	if err != nil {
@@ -196,7 +196,7 @@ func (gr *Repository) IsUserOwnerOfTheGroup(ctx context.Context, groupID, userID
 				userIDMsg:  userID,
 				groupIDMsg: groupID,
 			},
-			errorMsg: err,
+			errorMsg: err.Error(),
 		})
 		return err
 	}

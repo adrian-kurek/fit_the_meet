@@ -5,10 +5,15 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"time"
+
+	"github.com/google/uuid"
 
 	commonerrors "github.com/adrian-kurek/fit_the_meet/common/errors"
 	commoninterfaces "github.com/adrian-kurek/fit_the_meet/common/interfaces"
 )
+
+const lifespanOfActicationCode = 15 * time.Minute
 
 type groupRepository interface {
 	Insert(ctx context.Context, name string, userID int) error
@@ -16,6 +21,7 @@ type groupRepository interface {
 	Delete(ctx context.Context, groupID, userID int) error
 	RemoveParticipants(ctx context.Context, groupID, userID int, participants []int) error
 	IsUserOwnerOfTheGroup(ctx context.Context, groupID, userID int) error
+	InsertActivationCode(ctx context.Context, groupID int, code string, expiresAt time.Time) error
 }
 
 type Service struct {
@@ -46,7 +52,7 @@ func (gs *Service) RemoveParticipants(ctx context.Context, groupID, userID int, 
 	return gs.groupRepository.RemoveParticipants(ctx, groupID, userID, participants)
 }
 
-func (gs *Service) GenerateInviteLink(ctx context.Context, groupID, userID int) (string, error) {
+func (gs *Service) GenerateInviteCode(ctx context.Context, groupID, userID int) (string, error) {
 	err := gs.groupRepository.IsUserOwnerOfTheGroup(ctx, groupID, userID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -60,7 +66,14 @@ func (gs *Service) GenerateInviteLink(ctx context.Context, groupID, userID int) 
 		return "", err
 	}
 
-	// code := uuid.New().String()
+	code := uuid.New().String()
 
-	return "", nil
+	expiresAt := time.Now().Add(lifespanOfActicationCode)
+
+	err = gs.groupRepository.InsertActivationCode(ctx, groupID, code, expiresAt)
+	if err != nil {
+		return "", err
+	}
+
+	return code, nil
 }

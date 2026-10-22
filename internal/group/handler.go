@@ -22,7 +22,7 @@ type (
 		UpdateName(ctx context.Context, name string, groupID, userID int) error
 		Remove(ctx context.Context, groupID, userID int) error
 		RemoveParticipants(ctx context.Context, groupID, userID int, participants []int) error
-		GenerateInviteLink(ctx context.Context, groupID, userID int) (string, error)
+		GenerateInviteCode(ctx context.Context, groupID, userID int) (string, error)
 	}
 	authenticationMiddleware interface {
 		VerifyToken(r *http.Request) (*http.Request, error)
@@ -195,7 +195,7 @@ func (gh *Handler) RemoveParticipants(w http.ResponseWriter, r *http.Request) er
 	return nil
 }
 
-func (gh *Handler) GenereateInviteLink(w http.ResponseWriter, r *http.Request) error {
+func (gh *Handler) GenerateInviteCode(w http.ResponseWriter, r *http.Request) error {
 	ctx, cancel := context.WithTimeout(r.Context(), groupTimeout)
 	defer cancel()
 
@@ -214,7 +214,7 @@ func (gh *Handler) GenereateInviteLink(w http.ResponseWriter, r *http.Request) e
 		return err
 	}
 
-	code, err := gh.groupService.GenerateInviteLink(ctx, groupID, userID)
+	code, err := gh.groupService.GenerateInviteCode(ctx, groupID, userID)
 	if err != nil {
 		return gh.handleTimeout(err, r.URL.Path)
 	}

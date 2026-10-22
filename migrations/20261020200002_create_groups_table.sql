@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS groups
     created_by      INTEGER      NOT NULL
         constraint fk_user
             references users (id)
-            ON DELETE cascade,
+            ON DELETE cascade
 );
 -- +goose StatementEnd
 

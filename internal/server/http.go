@@ -31,6 +31,7 @@ type groupHandler interface {
 	UpdateName(w http.ResponseWriter, r *http.Request) error
 	Remove(w http.ResponseWriter, r *http.Request) error
 	RemoveParticipants(w http.ResponseWriter, r *http.Request) error
+	GenerateInviteCode(w http.ResponseWriter, r *http.Request) error
 }
 
 type DependencyConfig struct {

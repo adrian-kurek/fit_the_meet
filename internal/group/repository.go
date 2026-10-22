@@ -16,6 +16,7 @@ const (
 	argsMsg    = "args"
 	userIDMsg  = "userID"
 	groupIDMsg = "groupID"
+	codeMsg    = "code"
 )
 
 type Repository struct {
@@ -227,10 +228,77 @@ func (gr *Repository) InsertActivationCode(ctx context.Context, groupID int, cod
 			queryMsg: query,
 			argsMsg: map[string]any{
 				groupIDMsg:  groupID,
-				"code":      code,
+				codeMsg:     code,
 				"expiresAt": expiresAt,
 			},
 			errorMsg: err,
+		})
+		return err
+	}
+
+	return nil
+}
+
+func (gr *Repository) CheckActivationCode(ctx context.Context, code string) (int, error) {
+	query := `SELECT group_id FROM group_activation_codes WHERE code = $1 AND expires_at > NOW()`
+
+	stmt, err := gr.db.PrepareContext(ctx, query)
+	if err != nil {
+		gr.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
+			queryMsg: query,
+			errorMsg: err.Error(),
+		})
+		return 0, err
+	}
+	defer func() {
+		if closeErr := stmt.Close(); closeErr != nil {
+			gr.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
+		}
+	}()
+
+	var groupID int
+
+	err = stmt.QueryRowContext(ctx, code).Scan(&groupID)
+	if err != nil {
+		gr.logger.Error(commonerrors.FailedToExecuteSelectQuery, "data", map[string]any{
+			queryMsg: query,
+			argsMsg: map[string]any{
+				codeMsg: code,
+			},
+			errorMsg: err.Error(),
+		})
+		return 0, err
+	}
+
+	return groupID, nil
+}
+
+func (gr *Repository) InsertParticipantToGroup(ctx context.Context, groupID, userID int) error {
+	query := "INSERT INTO group_participants (group_id, user_id) VALUES($1, $2)"
+
+	stmt, err := gr.db.PrepareContext(ctx, query)
+	if err != nil {
+		gr.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
+			queryMsg: query,
+			errorMsg: err.Error(),
+		})
+		return err
+	}
+	defer func() {
+		if closeErr := stmt.Close(); closeErr != nil {
+			gr.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
+		}
+	}()
+
+	_, err = stmt.ExecContext(ctx, groupID, userID)
+	if err != nil {
+		gr.logger.Error(commonerrors.FailedToExecuteInsertQuery, "data", map[string]any{
+			queryMsg: query,
+			argsMsg: map[string]any{
+				userIDMsg:  userID,
+				groupIDMsg: groupID,
+			},
+			errorMsg: err.Error(),
 		})
 		return err
 	}

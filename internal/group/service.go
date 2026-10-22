@@ -22,6 +22,8 @@ type groupRepository interface {
 	RemoveParticipants(ctx context.Context, groupID, userID int, participants []int) error
 	IsUserOwnerOfTheGroup(ctx context.Context, groupID, userID int) error
 	InsertActivationCode(ctx context.Context, groupID int, code string, expiresAt time.Time) error
+	InsertParticipantToGroup(ctx context.Context, groupID, userID int) error
+	CheckActivationCode(ctx context.Context, code string) (int, error)
 }
 
 type Service struct {
@@ -76,4 +78,12 @@ func (gs *Service) GenerateInviteCode(ctx context.Context, groupID, userID int) 
 	}
 
 	return code, nil
+}
+
+func (gs *Service) Join(ctx context.Context, userID int, code string) error {
+	groupID, err := gs.groupRepository.CheckActivationCode(ctx, code)
+	if err != nil {
+		return err
+	}
+	return gs.groupRepository.InsertParticipantToGroup(ctx, groupID, userID)
 }

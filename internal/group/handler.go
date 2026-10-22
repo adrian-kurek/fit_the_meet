@@ -23,6 +23,7 @@ type (
 		Remove(ctx context.Context, groupID, userID int) error
 		RemoveParticipants(ctx context.Context, groupID, userID int, participants []int) error
 		GenerateInviteCode(ctx context.Context, groupID, userID int) (string, error)
+		Join(ctx context.Context, userID int, code string) error
 	}
 	authenticationMiddleware interface {
 		VerifyToken(r *http.Request) (*http.Request, error)
@@ -222,6 +223,32 @@ func (gh *Handler) GenerateInviteCode(w http.ResponseWriter, r *http.Request) er
 	response.Send(w, http.StatusOK, map[string]string{
 		"code": code,
 	})
+
+	return nil
+}
+
+func (gh *Handler) Join(w http.ResponseWriter, r *http.Request) error {
+	ctx, cancel := context.WithTimeout(r.Context(), groupTimeout)
+	defer cancel()
+
+	r, err := gh.authenticationMiddleware.VerifyToken(r)
+	if err != nil {
+		return gh.handleTimeout(err, r.URL.Path)
+	}
+
+	userID, err := request.ReadUserIDFromToken(r)
+	if err != nil {
+		return err
+	}
+
+	activationCode := r.URL.Query().Get("code")
+
+	err = gh.groupService.Join(ctx, userID, activationCode)
+	if err != nil {
+		return gh.handleTimeout(err, r.URL.Path)
+	}
+
+	response.Send(w, http.StatusNoContent, nil)
 
 	return nil
 }

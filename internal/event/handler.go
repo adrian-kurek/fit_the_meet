@@ -17,6 +17,7 @@ import (
 type eventService interface {
 	Create(ctx context.Context, userID int, event Upsert) error
 	ChangeStatus(ctx context.Context, userID int, eventID int) error
+	AddTimeBlocks(ctx context.Context, userID int, eventID int, timeBlocks UpsertTimeBlocks) error
 }
 
 type authenticationMiddleware interface {
@@ -112,22 +113,41 @@ func (eh *Handler) ChangeStatus(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// func (eh *Handler) AddTimeBlock(w http.ResponseWriter, r *http.Request) {
-// 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
-// 	defer cancel()
-//
-// 	r, err := eh.authenticationMiddleware.VerifyToken(r)
-// 	if err != nil {
-// 		return eh.handleTimeout(err, r.URL.Path)
-// 	}
-//
-// 	userID, err := request.ReadUserIDFromToken(r)
-// 	if err != nil {
-// 		return err
-// 	}
-//
-// 	eventID, err := strconv.Atoi(r.PathValue("eventID"))
-// 	if err != nil {
-// 		return err
-// 	}
-// }
+func (eh *Handler) AddTimeBlocks(w http.ResponseWriter, r *http.Request) error {
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	defer cancel()
+
+	r, err := eh.authenticationMiddleware.VerifyToken(r)
+	if err != nil {
+		return eh.handleTimeout(err, r.URL.Path)
+	}
+
+	userID, err := request.ReadUserIDFromToken(r)
+	if err != nil {
+		return err
+	}
+
+	eventID, err := strconv.Atoi(r.PathValue("eventID"))
+	if err != nil {
+		return err
+	}
+
+	reqData, err := request.ReadBody[UpsertTimeBlocks](r)
+	if err != nil {
+		return commonerrors.Validation("provided invalid json format")
+	}
+
+	err = validation.ValidateRequestData(reqData)
+	if err != nil {
+		return err
+	}
+
+	err = eh.eventService.AddTimeBlocks(ctx, userID, eventID, *reqData)
+	if err != nil {
+		return eh.handleTimeout(err, r.URL.Path)
+	}
+
+	response.Send(w, http.StatusNoContent, nil)
+
+	return nil
+}

@@ -9,6 +9,7 @@ CREATE TABLE event_participants (
         constraint fk_user
             references users (id)
             ON DELETE cascade,
+    date TIMESTAMP NOT NULL,
     start_time TIMESTAMP NOT NULL,
     end_time TIMESTAMP NOT NULL
 );

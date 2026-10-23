@@ -11,6 +11,7 @@ import (
 type eventHandler interface {
 	Create(w http.ResponseWriter, r *http.Request) error
 	ChangeStatus(w http.ResponseWriter, r *http.Request) error
+	AddTimeBlocks(w http.ResponseWriter, r *http.Request) error
 }
 
 type Routes struct {
@@ -30,4 +31,5 @@ func (er *Routes) Setup(router *http.ServeMux) {
 
 	router.Handle(fmt.Sprintf("POST %s/", prefix), request.Make(er.eventHandler.Create, er.logger))
 	router.Handle(fmt.Sprintf("PATCH %s/{eventID}", prefix), request.Make(er.eventHandler.ChangeStatus, er.logger))
+	router.Handle(fmt.Sprintf("PUT %s/{eventID}", prefix), request.Make(er.eventHandler.AddTimeBlocks, er.logger))
 }

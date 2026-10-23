@@ -5,3 +5,13 @@ type Upsert struct {
 	Description     string `json:"description"`
 	DurationMinutes int    `json:"duration_minutes" validate:"required,min=1"`
 }
+
+type UpsertTimeBlocks struct {
+	TimeBlocks []TimeBlock `json:"time_blocks" validate:"required,min=1"`
+}
+
+type TimeBlock struct {
+	Date      string `json:"date"       validate:"required"`
+	StartTime string `json:"start_time" validate:"required"`
+	EndTime   string `json:"end_time"   validate:"required"`
+}

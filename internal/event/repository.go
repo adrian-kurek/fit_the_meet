@@ -3,6 +3,8 @@ package event
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"strings"
 
 	commonerrors "github.com/adrian-kurek/fit_the_meet/common/errors"
 	commoninterfaces "github.com/adrian-kurek/fit_the_meet/common/interfaces"
@@ -27,6 +29,13 @@ const (
 	userIDMsg  = "userID"
 	groupIDMsg = "groupID"
 	codeMsg    = "code"
+
+	timeBlockArgumentCount  = 5
+	userIDArgumentOffset    = 1
+	eventIDArgumentOffset   = 2
+	dateArgumentOffset      = 3
+	startTimeArgumentOffset = 4
+	endTimeArgumentOffset   = 5
 )
 
 func (er *Repository) Insert(ctx context.Context, userID int, code string, event Upsert) error {
@@ -90,6 +99,63 @@ func (er *Repository) ChangeStatus(ctx context.Context, eventID, userID int) err
 				userIDMsg: userID,
 				"eventID": eventID,
 			},
+			errorMsg: err,
+		})
+		return err
+	}
+
+	return nil
+}
+
+func (er *Repository) InsertTimeBlocks(ctx context.Context, userID, eventID int, timeBlocks UpsertTimeBlocks) error {
+	query := `INSERT INTO event_participants(
+		user_id,
+		event_id,
+		date,
+		start_time,
+		end_time
+	) VALUES %s
+	ON CONFLICT (
+		event_id,
+		user_id,
+		date
+	) DO UPDATE SET start_time = EXCLUDED.start_time, end_time = EXCLUDED.end_time`
+
+	args := []any{}
+	placeholders := []string{}
+	for i, timeBlock := range timeBlocks.TimeBlocks {
+		argumentStart := i * timeBlockArgumentCount
+		placeholders = append(placeholders, fmt.Sprintf(
+			"($%d, $%d, $%d, $%d, $%d)",
+			argumentStart+userIDArgumentOffset,
+			argumentStart+eventIDArgumentOffset,
+			argumentStart+dateArgumentOffset,
+			argumentStart+startTimeArgumentOffset,
+			argumentStart+endTimeArgumentOffset,
+		))
+		args = append(args, userID, eventID, timeBlock.Date, timeBlock.StartTime, timeBlock.EndTime)
+	}
+	query = fmt.Sprintf(query, strings.Join(placeholders, ","))
+
+	stmt, err := er.db.PrepareContext(ctx, query)
+	if err != nil {
+		er.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
+			queryMsg: query,
+			errorMsg: err.Error(),
+		})
+		return err
+	}
+	defer func() {
+		if closeErr := stmt.Close(); closeErr != nil {
+			er.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
+		}
+	}()
+
+	_, err = stmt.ExecContext(ctx, args...)
+	if err != nil {
+		er.logger.Error(commonerrors.FailedToExecuteInsertQuery, "data", map[string]any{
+			queryMsg: query,
+			argsMsg:  timeBlocks,
 			errorMsg: err,
 		})
 		return err

@@ -111,18 +111,33 @@ func (er *Repository) InsertTimeBlocks(
 	userID, eventID int,
 	timeBlocks SubmitAvailabilityRequest,
 ) error {
-	query := `INSERT INTO event_participants(
+	if len(timeBlocks.TimeBlocks) == 0 {
+		return commonerrors.Validation("at least one time block is required")
+	}
+
+	query := `WITH submitted_blocks (user_id, event_id, date, start_time, end_time) AS (
+		VALUES %s
+	)
+	INSERT INTO event_participants (
 		user_id,
 		event_id,
 		date,
 		start_time,
 		end_time
-	) VALUES %s
-	ON CONFLICT (
-		event_id,
-		user_id,
-		date
-	) DO UPDATE SET start_time = EXCLUDED.start_time, end_time = EXCLUDED.end_time`
+	)
+	SELECT
+		sb.user_id,
+		e.id,
+		sb.date,
+		sb.start_time,
+		sb.end_time
+	FROM submitted_blocks sb
+	JOIN events e ON e.id = sb.event_id
+	WHERE e.is_active = TRUE
+	ON CONFLICT (event_id, user_id, date)
+	DO UPDATE SET
+		start_time = EXCLUDED.start_time,
+		end_time = EXCLUDED.end_time`
 
 	args := []any{}
 	placeholders := []string{}
@@ -154,7 +169,7 @@ func (er *Repository) InsertTimeBlocks(
 		}
 	}()
 
-	_, err = stmt.ExecContext(ctx, args...)
+	result, err := stmt.ExecContext(ctx, args...)
 	if err != nil {
 		er.logger.Error(commonerrors.FailedToExecuteInsertQuery, "data", map[string]any{
 			queryMsg: query,
@@ -162,6 +177,14 @@ func (er *Repository) InsertTimeBlocks(
 			errorMsg: err,
 		})
 		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return commonerrors.NotFound("active event not found")
 	}
 
 	return nil

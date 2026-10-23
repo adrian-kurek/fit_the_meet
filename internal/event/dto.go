@@ -1,12 +1,12 @@
 package event
 
-type Upsert struct {
+type Input struct {
 	Name            string `json:"name"             validate:"required,min=6"`
 	Description     string `json:"description"`
 	DurationMinutes int    `json:"duration_minutes" validate:"required,min=1"`
 }
 
-type UpsertTimeBlocks struct {
+type SubmitAvailabilityRequest struct {
 	TimeBlocks []TimeBlock `json:"time_blocks" validate:"required,min=1"`
 }
 

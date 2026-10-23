@@ -14,7 +14,7 @@ import (
 
 type (
 	authRepository interface {
-		InsertRefreshToken(
+		SaveRefreshToken(
 			ctx context.Context,
 			ipAddress string,
 			deviceInfo string,
@@ -27,18 +27,18 @@ type (
 		RemoveTokensByUserID(ctx context.Context, userID int) error
 	}
 	userRepository interface {
-		CheckDoesExistByEmail(ctx context.Context, email string) (bool, error)
+		ExistsByEmail(ctx context.Context, email string) (bool, error)
 		Insert(ctx context.Context, username, email, password string) error
-		GetByEmail(ctx context.Context, email string) (user.Instance, error)
+		GetByEmail(ctx context.Context, email string) (user.Account, error)
 	}
 )
 
 type authenticationMiddleware interface {
 	GenerateRefreshToken() ([]byte, error)
 	HashToken(token []byte) string
-	GenerateAccessToken(user user.Instance) (string, error)
+	GenerateAccessToken(user user.Account) (string, error)
 	VerifyToken(r *http.Request) (*http.Request, error)
-	BlacklistUser(r *http.Request) error
+	RevokeAccessToken(r *http.Request) error
 }
 
 type Service struct {
@@ -62,8 +62,8 @@ func NewService(
 	}
 }
 
-func (as *Service) Register(ctx context.Context, register Register) error {
-	doesUserExist, err := as.userRepository.CheckDoesExistByEmail(ctx, register.Email)
+func (as *Service) Register(ctx context.Context, register RegisterRequest) error {
+	doesUserExist, err := as.userRepository.ExistsByEmail(ctx, register.Email)
 	if err != nil {
 		return err
 	}
@@ -88,7 +88,7 @@ func (as *Service) Register(ctx context.Context, register Register) error {
 
 func (as *Service) Login(
 	ctx context.Context,
-	login Login,
+	login LoginRequest,
 	ipAddress string,
 	deviceInfo string,
 ) (string, []byte, error) {
@@ -125,7 +125,7 @@ func (as *Service) Login(
 		return "", nil, err
 	}
 
-	err = as.authRepository.InsertRefreshToken(ctx, ipAddress, deviceInfo, hashedRefreshToken, user.ID)
+	err = as.authRepository.SaveRefreshToken(ctx, ipAddress, deviceInfo, hashedRefreshToken, user.ID)
 	if err != nil {
 		return "", nil, err
 	}
@@ -165,7 +165,7 @@ func (as *Service) RefreshAccessToken(ctx context.Context, refreshToken []byte) 
 		return "", err
 	}
 
-	user := user.Instance{
+	user := user.Account{
 		ID:       tokenWithUser.ID,
 		Email:    tokenWithUser.Email,
 		Username: tokenWithUser.Username,

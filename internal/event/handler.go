@@ -15,9 +15,9 @@ import (
 )
 
 type eventService interface {
-	Create(ctx context.Context, userID int, event Upsert) error
-	ChangeStatus(ctx context.Context, userID int, eventID int) error
-	AddTimeBlocks(ctx context.Context, userID int, eventID int, timeBlocks UpsertTimeBlocks) error
+	Create(ctx context.Context, userID int, event Input) error
+	ToggleActive(ctx context.Context, userID int, eventID int) error
+	AddTimeBlocks(ctx context.Context, userID int, eventID int, timeBlocks SubmitAvailabilityRequest) error
 }
 
 type authenticationMiddleware interface {
@@ -66,7 +66,7 @@ func (eh *Handler) Create(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	reqData, err := request.ReadBody[Upsert](r)
+	reqData, err := request.ReadBody[Input](r)
 	if err != nil {
 		return commonerrors.Validation("provided invalid json format")
 	}
@@ -85,7 +85,7 @@ func (eh *Handler) Create(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (eh *Handler) ChangeStatus(w http.ResponseWriter, r *http.Request) error {
+func (eh *Handler) ToggleActive(w http.ResponseWriter, r *http.Request) error {
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 
@@ -104,7 +104,7 @@ func (eh *Handler) ChangeStatus(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	err = eh.eventService.ChangeStatus(ctx, userID, eventID)
+	err = eh.eventService.ToggleActive(ctx, userID, eventID)
 	if err != nil {
 		return eh.handleTimeout(err, r.URL.Path)
 	}
@@ -132,7 +132,7 @@ func (eh *Handler) AddTimeBlocks(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	reqData, err := request.ReadBody[UpsertTimeBlocks](r)
+	reqData, err := request.ReadBody[SubmitAvailabilityRequest](r)
 	if err != nil {
 		return commonerrors.Validation("provided invalid json format")
 	}

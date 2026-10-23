@@ -29,7 +29,7 @@ const (
 	errorMsg = "error"
 )
 
-func (ar *Repository) InsertRefreshToken(
+func (ar *Repository) SaveRefreshToken(
 	ctx context.Context,
 	ipAddress string,
 	deviceInfo string,

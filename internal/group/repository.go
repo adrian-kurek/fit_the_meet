@@ -98,7 +98,7 @@ func (gr *Repository) UpdateName(ctx context.Context, name string, groupID, user
 	return nil
 }
 
-func (gr *Repository) Delete(ctx context.Context, groupID, userID int) error {
+func (gr *Repository) DeleteOwnedGroup(ctx context.Context, groupID, userID int) error {
 	query := "DELETE FROM groups WHERE id=$1 AND created_by = $2"
 
 	stmt, err := gr.db.PrepareContext(ctx, query)
@@ -170,7 +170,7 @@ func (gr *Repository) RemoveParticipants(ctx context.Context, groupID, userID in
 	return nil
 }
 
-func (gr *Repository) IsUserOwnerOfTheGroup(ctx context.Context, groupID, userID int) error {
+func (gr *Repository) VerifyOwnership(ctx context.Context, groupID, userID int) error {
 	query := `SELECT id FROM groups WHERE id = $1 AND created_by = $2`
 
 	stmt, err := gr.db.PrepareContext(ctx, query)
@@ -205,7 +205,7 @@ func (gr *Repository) IsUserOwnerOfTheGroup(ctx context.Context, groupID, userID
 	return nil
 }
 
-func (gr *Repository) InsertActivationCode(ctx context.Context, groupID int, code string, expiresAt time.Time) error {
+func (gr *Repository) SaveInviteCode(ctx context.Context, groupID int, code string, expiresAt time.Time) error {
 	query := "INSERT INTO group_activation_codes(group_id,code,expires_at) VALUES($1,$2,$3)"
 
 	stmt, err := gr.db.PrepareContext(ctx, query)
@@ -239,7 +239,7 @@ func (gr *Repository) InsertActivationCode(ctx context.Context, groupID int, cod
 	return nil
 }
 
-func (gr *Repository) CheckActivationCode(ctx context.Context, code string) (int, error) {
+func (gr *Repository) FindGroupIDByInviteCode(ctx context.Context, code string) (int, error) {
 	query := `SELECT group_id FROM group_activation_codes WHERE code = $1 AND expires_at > NOW()`
 
 	stmt, err := gr.db.PrepareContext(ctx, query)
@@ -273,7 +273,7 @@ func (gr *Repository) CheckActivationCode(ctx context.Context, code string) (int
 	return groupID, nil
 }
 
-func (gr *Repository) InsertParticipantToGroup(ctx context.Context, groupID, userID int) error {
+func (gr *Repository) AddMember(ctx context.Context, groupID, userID int) error {
 	query := "INSERT INTO group_participants (group_id, user_id) VALUES($1, $2)"
 
 	stmt, err := gr.db.PrepareContext(ctx, query)

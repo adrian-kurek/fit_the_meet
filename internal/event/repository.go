@@ -23,12 +23,11 @@ func NewRepository(db *sql.DB, logger commoninterfaces.Logger) *Repository {
 }
 
 const (
-	queryMsg   = "query"
-	errorMsg   = "error"
-	argsMsg    = "args"
-	userIDMsg  = "userID"
-	groupIDMsg = "groupID"
-	codeMsg    = "code"
+	queryMsg  = "query"
+	errorMsg  = "error"
+	argsMsg   = "args"
+	userIDMsg = "userID"
+	codeMsg   = "code"
 
 	timeBlockArgumentCount  = 5
 	userIDArgumentOffset    = 1
@@ -38,7 +37,7 @@ const (
 	endTimeArgumentOffset   = 5
 )
 
-func (er *Repository) Insert(ctx context.Context, userID int, code string, event Upsert) error {
+func (er *Repository) Insert(ctx context.Context, userID int, code string, event Input) error {
 	query := "INSERT INTO events(name,description, duration_minutes, code, created_by) VALUES($1,$2,$3,$4,$5)"
 
 	stmt, err := er.db.PrepareContext(ctx, query)
@@ -74,7 +73,7 @@ func (er *Repository) Insert(ctx context.Context, userID int, code string, event
 	return nil
 }
 
-func (er *Repository) ChangeStatus(ctx context.Context, eventID, userID int) error {
+func (er *Repository) ToggleActive(ctx context.Context, eventID, userID int) error {
 	query := "UPDATE events SET is_active = NOT is_active WHERE id=$1 AND created_by = $2"
 
 	stmt, err := er.db.PrepareContext(ctx, query)
@@ -107,7 +106,11 @@ func (er *Repository) ChangeStatus(ctx context.Context, eventID, userID int) err
 	return nil
 }
 
-func (er *Repository) InsertTimeBlocks(ctx context.Context, userID, eventID int, timeBlocks UpsertTimeBlocks) error {
+func (er *Repository) InsertTimeBlocks(
+	ctx context.Context,
+	userID, eventID int,
+	timeBlocks SubmitAvailabilityRequest,
+) error {
 	query := `INSERT INTO event_participants(
 		user_id,
 		event_id,

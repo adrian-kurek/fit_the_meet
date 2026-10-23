@@ -70,7 +70,7 @@ func (gh *Handler) Create(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	reqData, err := request.ReadBody[Upsert](r)
+	reqData, err := request.ReadBody[Input](r)
 	if err != nil {
 		return commonerrors.Validation("provided invalid json format")
 	}
@@ -109,7 +109,7 @@ func (gh *Handler) UpdateName(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	reqData, err := request.ReadBody[Upsert](r)
+	reqData, err := request.ReadBody[Input](r)
 	if err != nil {
 		return commonerrors.Validation("provided invalid json format")
 	}
@@ -177,7 +177,7 @@ func (gh *Handler) RemoveParticipants(w http.ResponseWriter, r *http.Request) er
 		return err
 	}
 
-	reqData, err := request.ReadBody[RemoveParticipants](r)
+	reqData, err := request.ReadBody[RemoveParticipantsRequest](r)
 	if err != nil {
 		return commonerrors.Validation("provided invalid json format")
 	}

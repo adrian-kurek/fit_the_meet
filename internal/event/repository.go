@@ -38,7 +38,22 @@ const (
 )
 
 func (er *Repository) Insert(ctx context.Context, userID int, code string, event Input) error {
-	const query = "INSERT INTO events(name,description, duration_minutes, code, created_by) VALUES($1,$2,$3,$4,$5)"
+	const query = `INSERT INTO events(name, description, duration_minutes, code, created_by)
+		VALUES($1, $2, $3, $4, $5)`
+
+	_, err := er.executeInsert(ctx, query, event, code, userID)
+	return err
+}
+
+func (er *Repository) InsertForGroup(ctx context.Context, userID, groupID int, code string, event Input) error {
+	const query = `INSERT INTO events(
+		name,
+		description,
+		duration_minutes,
+		code,
+		created_by,
+		group_id
+	) SELECT $1,$2,$3,$4,$5, g.id FROM groups g  WHERE g.id = $6 AND g.created_by = $5`
 
 	stmt, err := er.db.PrepareContext(ctx, query)
 	if err != nil {
@@ -54,7 +69,7 @@ func (er *Repository) Insert(ctx context.Context, userID int, code string, event
 		}
 	}()
 
-	_, err = stmt.ExecContext(ctx, event.Name, event.Description, event.DurationMinutes, code, userID)
+	res, err := stmt.ExecContext(ctx, event.Name, event.Description, event.DurationMinutes, code, userID, groupID)
 	if err != nil {
 		er.logger.Error(commonerrors.FailedToExecuteInsertQuery, "data", map[string]any{
 			queryMsg: query,
@@ -70,7 +85,55 @@ func (er *Repository) Insert(ctx context.Context, userID int, code string, event
 		return err
 	}
 
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return commonerrors.NotFound("owned group not found")
+	}
+
 	return nil
+}
+
+func (er *Repository) executeInsert(
+	ctx context.Context,
+	query string,
+	event Input,
+	code string,
+	userID int,
+) (sql.Result, error) {
+	stmt, err := er.db.PrepareContext(ctx, query)
+	if err != nil {
+		er.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
+			queryMsg: query,
+			errorMsg: err.Error(),
+		})
+		return nil, err
+	}
+	defer func() {
+		if closeErr := stmt.Close(); closeErr != nil {
+			er.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
+		}
+	}()
+
+	result, err := stmt.ExecContext(ctx, event.Name, event.Description, event.DurationMinutes, code, userID)
+	if err != nil {
+		er.logger.Error(commonerrors.FailedToExecuteInsertQuery, "data", map[string]any{
+			queryMsg: query,
+			argsMsg: map[string]any{
+				userIDMsg:         userID,
+				codeMsg:           code,
+				"name":            event.Name,
+				"description":     event.Description,
+				"durationMinutes": event.DurationMinutes,
+			},
+			errorMsg: err,
+		})
+		return nil, err
+	}
+
+	return result, nil
 }
 
 func (er *Repository) ToggleActive(ctx context.Context, eventID, userID int) error {
@@ -144,7 +207,7 @@ func (er *Repository) InsertTimeBlocks(
 	for i, timeBlock := range timeBlocks.TimeBlocks {
 		argumentStart := i * timeBlockArgumentCount
 		placeholders = append(placeholders, fmt.Sprintf(
-			"($%d, $%d, $%d, $%d, $%d)",
+			"($%d, $%d, $%d::date, $%d::time, $%d::time)",
 			argumentStart+userIDArgumentOffset,
 			argumentStart+eventIDArgumentOffset,
 			argumentStart+dateArgumentOffset,

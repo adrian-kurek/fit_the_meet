@@ -9,6 +9,7 @@ import (
 
 type eventRepository interface {
 	Insert(ctx context.Context, userID int, code string, event Input) error
+	InsertForGroup(ctx context.Context, userID, groupID int, code string, event Input) error
 	ToggleActive(ctx context.Context, eventID, userID int) error
 	InsertTimeBlocks(ctx context.Context, userID, eventID int, timeBlocks SubmitAvailabilityRequest) error
 }
@@ -29,6 +30,12 @@ func (es *Service) Create(ctx context.Context, userID int, event Input) error {
 	code := uuid.New().String()
 
 	return es.eventRepository.Insert(ctx, userID, code, event)
+}
+
+func (es *Service) CreateForGroup(ctx context.Context, userID, groupID int, event Input) error {
+	code := uuid.New().String()
+
+	return es.eventRepository.InsertForGroup(ctx, userID, groupID, code, event)
 }
 
 func (es *Service) ToggleActive(ctx context.Context, userID int, eventID int) error {

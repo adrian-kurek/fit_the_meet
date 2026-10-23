@@ -16,6 +16,7 @@ import (
 
 type eventService interface {
 	Create(ctx context.Context, userID int, event Input) error
+	CreateForGroup(ctx context.Context, userID, groupID int, event Input) error
 	ToggleActive(ctx context.Context, userID int, eventID int) error
 	AddTimeBlocks(ctx context.Context, userID int, eventID int, timeBlocks SubmitAvailabilityRequest) error
 }
@@ -53,6 +54,19 @@ func (eh *Handler) handleTimeout(err error, path string) error {
 }
 
 func (eh *Handler) Create(w http.ResponseWriter, r *http.Request) error {
+	return eh.create(w, r, nil)
+}
+
+func (eh *Handler) CreateForGroup(w http.ResponseWriter, r *http.Request) error {
+	groupID, err := strconv.Atoi(r.PathValue("groupID"))
+	if err != nil || groupID <= 0 {
+		return commonerrors.Validation("invalid group ID")
+	}
+
+	return eh.create(w, r, &groupID)
+}
+
+func (eh *Handler) create(w http.ResponseWriter, r *http.Request, groupID *int) error {
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 
@@ -76,7 +90,11 @@ func (eh *Handler) Create(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	err = eh.eventService.Create(ctx, userID, *reqData)
+	if groupID == nil {
+		err = eh.eventService.Create(ctx, userID, *reqData)
+	} else {
+		err = eh.eventService.CreateForGroup(ctx, userID, *groupID, *reqData)
+	}
 	if err != nil {
 		return eh.handleTimeout(err, r.URL.Path)
 	}
@@ -139,6 +157,9 @@ func (eh *Handler) AddTimeBlocks(w http.ResponseWriter, r *http.Request) error {
 
 	err = validation.ValidateRequestData(reqData)
 	if err != nil {
+		return err
+	}
+	if err = reqData.Validate(); err != nil {
 		return err
 	}
 

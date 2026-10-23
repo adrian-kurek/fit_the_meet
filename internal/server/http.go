@@ -20,6 +20,7 @@ const (
 
 type eventHandler interface {
 	Create(w http.ResponseWriter, r *http.Request) error
+	CreateForGroup(w http.ResponseWriter, r *http.Request) error
 	ToggleActive(w http.ResponseWriter, r *http.Request) error
 	AddTimeBlocks(w http.ResponseWriter, r *http.Request) error
 }

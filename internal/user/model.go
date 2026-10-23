@@ -2,7 +2,7 @@ package user
 
 import "github.com/golang-jwt/jwt/v4"
 
-type Instance struct {
+type Account struct {
 	ID       int
 	Email    string
 	Username string

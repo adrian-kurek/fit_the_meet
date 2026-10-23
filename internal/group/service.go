@@ -18,12 +18,12 @@ const lifespanOfActicationCode = 15 * time.Minute
 type groupRepository interface {
 	Insert(ctx context.Context, name string, userID int) error
 	UpdateName(ctx context.Context, name string, groupID, userID int) error
-	Delete(ctx context.Context, groupID, userID int) error
+	DeleteOwnedGroup(ctx context.Context, groupID, userID int) error
 	RemoveParticipants(ctx context.Context, groupID, userID int, participants []int) error
-	IsUserOwnerOfTheGroup(ctx context.Context, groupID, userID int) error
-	InsertActivationCode(ctx context.Context, groupID int, code string, expiresAt time.Time) error
-	InsertParticipantToGroup(ctx context.Context, groupID, userID int) error
-	CheckActivationCode(ctx context.Context, code string) (int, error)
+	VerifyOwnership(ctx context.Context, groupID, userID int) error
+	SaveInviteCode(ctx context.Context, groupID int, code string, expiresAt time.Time) error
+	AddMember(ctx context.Context, groupID, userID int) error
+	FindGroupIDByInviteCode(ctx context.Context, code string) (int, error)
 }
 
 type Service struct {
@@ -47,7 +47,7 @@ func (gs *Service) UpdateName(ctx context.Context, name string, groupID, userID 
 }
 
 func (gs *Service) Remove(ctx context.Context, groupID, userID int) error {
-	return gs.groupRepository.Delete(ctx, groupID, userID)
+	return gs.groupRepository.DeleteOwnedGroup(ctx, groupID, userID)
 }
 
 func (gs *Service) RemoveParticipants(ctx context.Context, groupID, userID int, participants []int) error {
@@ -55,7 +55,7 @@ func (gs *Service) RemoveParticipants(ctx context.Context, groupID, userID int, 
 }
 
 func (gs *Service) GenerateInviteCode(ctx context.Context, groupID, userID int) (string, error) {
-	err := gs.groupRepository.IsUserOwnerOfTheGroup(ctx, groupID, userID)
+	err := gs.groupRepository.VerifyOwnership(ctx, groupID, userID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", commonerrors.NewAPI(
@@ -72,7 +72,7 @@ func (gs *Service) GenerateInviteCode(ctx context.Context, groupID, userID int) 
 
 	expiresAt := time.Now().Add(lifespanOfActicationCode)
 
-	err = gs.groupRepository.InsertActivationCode(ctx, groupID, code, expiresAt)
+	err = gs.groupRepository.SaveInviteCode(ctx, groupID, code, expiresAt)
 	if err != nil {
 		return "", err
 	}
@@ -81,9 +81,9 @@ func (gs *Service) GenerateInviteCode(ctx context.Context, groupID, userID int) 
 }
 
 func (gs *Service) Join(ctx context.Context, userID int, code string) error {
-	groupID, err := gs.groupRepository.CheckActivationCode(ctx, code)
+	groupID, err := gs.groupRepository.FindGroupIDByInviteCode(ctx, code)
 	if err != nil {
 		return err
 	}
-	return gs.groupRepository.InsertParticipantToGroup(ctx, groupID, userID)
+	return gs.groupRepository.AddMember(ctx, groupID, userID)
 }

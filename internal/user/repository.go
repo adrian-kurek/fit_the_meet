@@ -28,8 +28,8 @@ func NewRepository(db *sql.DB, logger commoninterfaces.Logger) *Repository {
 	}
 }
 
-func (ur *Repository) CheckDoesExistByEmail(ctx context.Context, email string) (bool, error) {
-	query := "SELECT id FROM users WHERE email = $1"
+func (ur *Repository) ExistsByEmail(ctx context.Context, email string) (bool, error) {
+	const query = "SELECT id FROM users WHERE email = $1"
 
 	stmt, err := ur.db.PrepareContext(ctx, query)
 	if err != nil {
@@ -68,7 +68,7 @@ func (ur *Repository) CheckDoesExistByEmail(ctx context.Context, email string) (
 }
 
 func (ur *Repository) Insert(ctx context.Context, username, email, password string) error {
-	query := "INSERT INTO users(username,email,password) VALUES($1,$2,$3)"
+	const query = "INSERT INTO users(username,email,password) VALUES($1,$2,$3)"
 
 	stmt, err := ur.db.PrepareContext(ctx, query)
 	if err != nil {
@@ -100,8 +100,8 @@ func (ur *Repository) Insert(ctx context.Context, username, email, password stri
 	return nil
 }
 
-func (ur *Repository) GetByEmail(ctx context.Context, email string) (Instance, error) {
-	query := "SELECT id,email,username,password FROM users WHERE email = $1"
+func (ur *Repository) GetByEmail(ctx context.Context, email string) (Account, error) {
+	const query = "SELECT id,email,username,password FROM users WHERE email = $1"
 
 	stmt, err := ur.db.PrepareContext(ctx, query)
 	if err != nil {
@@ -109,7 +109,7 @@ func (ur *Repository) GetByEmail(ctx context.Context, email string) (Instance, e
 			queryMsg: query,
 			errorMsg: err.Error(),
 		})
-		return Instance{}, err
+		return Account{}, err
 	}
 	defer func() {
 		if closeErr := stmt.Close(); closeErr != nil {
@@ -117,12 +117,12 @@ func (ur *Repository) GetByEmail(ctx context.Context, email string) (Instance, e
 		}
 	}()
 
-	var user Instance
+	var user Account
 
 	err = stmt.QueryRowContext(ctx, email).Scan(&user.ID, &user.Email, &user.Username, &user.Password)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return Instance{}, commonerrors.NotFound("failed to find user with provided email")
+			return Account{}, commonerrors.NotFound("failed to find user with provided email")
 		}
 		ur.logger.Error(commonerrors.FailedToExecuteSelectQuery, "data", map[string]any{
 			queryMsg: query,
@@ -131,7 +131,7 @@ func (ur *Repository) GetByEmail(ctx context.Context, email string) (Instance, e
 			},
 			errorMsg: err,
 		})
-		return Instance{}, err
+		return Account{}, err
 	}
 
 	return user, nil

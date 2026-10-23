@@ -13,6 +13,7 @@ import (
 	"github.com/adrian-kurek/fit_the_meet/common/logger"
 	"github.com/adrian-kurek/fit_the_meet/config"
 	"github.com/adrian-kurek/fit_the_meet/internal/auth"
+	"github.com/adrian-kurek/fit_the_meet/internal/event"
 	"github.com/adrian-kurek/fit_the_meet/internal/group"
 	"github.com/adrian-kurek/fit_the_meet/internal/server"
 	"github.com/adrian-kurek/fit_the_meet/internal/user"
@@ -39,11 +40,17 @@ func bootstrapHTTPServer(
 	groupRepository := group.NewRepository(db, logger)
 	groupService := group.NewService(groupRepository, logger)
 	groupHandler := group.NewHandler(groupService, authenticationMiddleware, logger)
+
+	eventRepository := event.NewRepository(db, logger)
+	eventService := event.NewService(eventRepository, logger)
+	eventHandler := event.NewHandler(eventService, authenticationMiddleware, logger)
+
 	dependenciesConfig := server.NewDependencyConfig(
 		port,
 		logger,
 		authHandler,
 		groupHandler,
+		eventHandler,
 	)
 	return server.NewHTTP(dependenciesConfig)
 }

@@ -8,6 +8,7 @@ import (
 
 	commoninterfaces "github.com/adrian-kurek/fit_the_meet/common/interfaces"
 	"github.com/adrian-kurek/fit_the_meet/internal/auth"
+	"github.com/adrian-kurek/fit_the_meet/internal/event"
 	"github.com/adrian-kurek/fit_the_meet/internal/group"
 )
 
@@ -16,6 +17,13 @@ const (
 	defaultWriteTimeout = 50 * time.Second
 	defaultIdleTimeout  = 30 * time.Second
 )
+
+type eventHandler interface {
+	Create(w http.ResponseWriter, r *http.Request) error
+	CreateForGroup(w http.ResponseWriter, r *http.Request) error
+	ToggleActive(w http.ResponseWriter, r *http.Request) error
+	AddTimeBlocks(w http.ResponseWriter, r *http.Request) error
+}
 
 type authHandler interface {
 	Register(w http.ResponseWriter, r *http.Request) error
@@ -40,6 +48,7 @@ type DependencyConfig struct {
 	logger       commoninterfaces.Logger
 	authHandler  authHandler
 	groupHandler groupHandler
+	eventHandler eventHandler
 }
 
 func NewDependencyConfig(
@@ -47,12 +56,14 @@ func NewDependencyConfig(
 	logger commoninterfaces.Logger,
 	authHandler authHandler,
 	groupHandler groupHandler,
+	eventHandler eventHandler,
 ) *DependencyConfig {
 	return &DependencyConfig{
 		port:         port,
 		logger:       logger,
 		authHandler:  authHandler,
 		groupHandler: groupHandler,
+		eventHandler: eventHandler,
 	}
 }
 
@@ -86,6 +97,8 @@ func (h *HTTP) SetupRoutes() {
 	authRoute.Setup(h.router)
 	groupRoute := group.NewRoutes(h.config.groupHandler, h.config.logger)
 	groupRoute.Setup(h.router)
+	eventRoute := event.NewRoutes(h.config.eventHandler, h.config.logger)
+	eventRoute.Setup(h.router)
 }
 
 func (h *HTTP) Shutdown(ctx context.Context) error {

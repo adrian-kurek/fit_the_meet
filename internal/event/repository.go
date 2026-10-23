@@ -1,0 +1,254 @@
+package event
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"strings"
+
+	commonerrors "github.com/adrian-kurek/fit_the_meet/common/errors"
+	commoninterfaces "github.com/adrian-kurek/fit_the_meet/common/interfaces"
+)
+
+type Repository struct {
+	db     *sql.DB
+	logger commoninterfaces.Logger
+}
+
+func NewRepository(db *sql.DB, logger commoninterfaces.Logger) *Repository {
+	return &Repository{
+		db:     db,
+		logger: logger,
+	}
+}
+
+const (
+	queryMsg  = "query"
+	errorMsg  = "error"
+	argsMsg   = "args"
+	userIDMsg = "userID"
+	codeMsg   = "code"
+
+	timeBlockArgumentCount  = 5
+	userIDArgumentOffset    = 1
+	eventIDArgumentOffset   = 2
+	dateArgumentOffset      = 3
+	startTimeArgumentOffset = 4
+	endTimeArgumentOffset   = 5
+)
+
+func (er *Repository) Insert(ctx context.Context, userID int, code string, event Input) error {
+	const query = `INSERT INTO events(name, description, duration_minutes, code, created_by)
+		VALUES($1, $2, $3, $4, $5)`
+
+	_, err := er.executeInsert(ctx, query, event, code, userID)
+	return err
+}
+
+func (er *Repository) InsertForGroup(ctx context.Context, userID, groupID int, code string, event Input) error {
+	const query = `INSERT INTO events(
+		name,
+		description,
+		duration_minutes,
+		code,
+		created_by,
+		group_id
+	) SELECT $1,$2,$3,$4,$5, g.id FROM groups g  WHERE g.id = $6 AND g.created_by = $5`
+
+	stmt, err := er.db.PrepareContext(ctx, query)
+	if err != nil {
+		er.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
+			queryMsg: query,
+			errorMsg: err.Error(),
+		})
+		return err
+	}
+	defer func() {
+		if closeErr := stmt.Close(); closeErr != nil {
+			er.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
+		}
+	}()
+
+	res, err := stmt.ExecContext(ctx, event.Name, event.Description, event.DurationMinutes, code, userID, groupID)
+	if err != nil {
+		er.logger.Error(commonerrors.FailedToExecuteInsertQuery, "data", map[string]any{
+			queryMsg: query,
+			argsMsg: map[string]any{
+				userIDMsg:         userID,
+				codeMsg:           code,
+				"name":            event.Name,
+				"description":     event.Description,
+				"durationMinutes": event.DurationMinutes,
+			},
+			errorMsg: err,
+		})
+		return err
+	}
+
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return commonerrors.NotFound("owned group not found")
+	}
+
+	return nil
+}
+
+func (er *Repository) executeInsert(
+	ctx context.Context,
+	query string,
+	event Input,
+	code string,
+	userID int,
+) (sql.Result, error) {
+	stmt, err := er.db.PrepareContext(ctx, query)
+	if err != nil {
+		er.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
+			queryMsg: query,
+			errorMsg: err.Error(),
+		})
+		return nil, err
+	}
+	defer func() {
+		if closeErr := stmt.Close(); closeErr != nil {
+			er.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
+		}
+	}()
+
+	result, err := stmt.ExecContext(ctx, event.Name, event.Description, event.DurationMinutes, code, userID)
+	if err != nil {
+		er.logger.Error(commonerrors.FailedToExecuteInsertQuery, "data", map[string]any{
+			queryMsg: query,
+			argsMsg: map[string]any{
+				userIDMsg:         userID,
+				codeMsg:           code,
+				"name":            event.Name,
+				"description":     event.Description,
+				"durationMinutes": event.DurationMinutes,
+			},
+			errorMsg: err,
+		})
+		return nil, err
+	}
+
+	return result, nil
+}
+
+func (er *Repository) ToggleActive(ctx context.Context, eventID, userID int) error {
+	const query = "UPDATE events SET is_active = NOT is_active WHERE id=$1 AND created_by = $2"
+
+	stmt, err := er.db.PrepareContext(ctx, query)
+	if err != nil {
+		er.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
+			queryMsg: query,
+			errorMsg: err.Error(),
+		})
+		return err
+	}
+	defer func() {
+		if closeErr := stmt.Close(); closeErr != nil {
+			er.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
+		}
+	}()
+
+	_, err = stmt.ExecContext(ctx, eventID, userID)
+	if err != nil {
+		er.logger.Error(commonerrors.FailedToExecuteUpdateQuery, "data", map[string]any{
+			queryMsg: query,
+			argsMsg: map[string]any{
+				userIDMsg: userID,
+				"eventID": eventID,
+			},
+			errorMsg: err,
+		})
+		return err
+	}
+
+	return nil
+}
+
+func (er *Repository) InsertTimeBlocks(
+	ctx context.Context,
+	userID, eventID int,
+	timeBlocks SubmitAvailabilityRequest,
+) error {
+	if len(timeBlocks.TimeBlocks) == 0 {
+		return commonerrors.Validation("at least one time block is required")
+	}
+
+	query := `WITH submitted_blocks (user_id, event_id, date, start_time, end_time) AS (
+		VALUES %s
+	)
+	INSERT INTO event_participants (
+		user_id,
+		event_id,
+		date,
+		start_time,
+		end_time
+	)
+	SELECT
+		sb.user_id,
+		e.id,
+		sb.date,
+		sb.start_time,
+		sb.end_time
+	FROM submitted_blocks sb
+	JOIN events e ON e.id = sb.event_id
+	WHERE e.is_active = TRUE
+	ON CONFLICT (event_id, user_id, date)
+	DO UPDATE SET
+		start_time = EXCLUDED.start_time,
+		end_time = EXCLUDED.end_time`
+
+	args := []any{}
+	placeholders := []string{}
+	for i, timeBlock := range timeBlocks.TimeBlocks {
+		argumentStart := i * timeBlockArgumentCount
+		placeholders = append(placeholders, fmt.Sprintf(
+			"($%d, $%d, $%d::date, $%d::time, $%d::time)",
+			argumentStart+userIDArgumentOffset,
+			argumentStart+eventIDArgumentOffset,
+			argumentStart+dateArgumentOffset,
+			argumentStart+startTimeArgumentOffset,
+			argumentStart+endTimeArgumentOffset,
+		))
+		args = append(args, userID, eventID, timeBlock.Date, timeBlock.StartTime, timeBlock.EndTime)
+	}
+	query = fmt.Sprintf(query, strings.Join(placeholders, ","))
+
+	stmt, err := er.db.PrepareContext(ctx, query)
+	if err != nil {
+		er.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
+			queryMsg: query,
+			errorMsg: err.Error(),
+		})
+		return err
+	}
+	defer func() {
+		if closeErr := stmt.Close(); closeErr != nil {
+			er.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
+		}
+	}()
+
+	result, err := stmt.ExecContext(ctx, args...)
+	if err != nil {
+		er.logger.Error(commonerrors.FailedToExecuteInsertQuery, "data", map[string]any{
+			queryMsg: query,
+			argsMsg:  timeBlocks,
+			errorMsg: err,
+		})
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return commonerrors.NotFound("active event not found")
+	}
+
+	return nil
+}

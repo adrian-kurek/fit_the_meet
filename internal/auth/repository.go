@@ -29,14 +29,14 @@ const (
 	errorMsg = "error"
 )
 
-func (ar *Repository) InsertRefreshToken(
+func (ar *Repository) SaveRefreshToken(
 	ctx context.Context,
 	ipAddress string,
 	deviceInfo string,
 	refreshToken string,
 	userID int,
 ) error {
-	query := `INSERT INTO refresh_tokens(user_id,token_hash,device_info,ip_address, expires_at, last_used_at) VALUES($1,$2,$3,$4,$5,$6)`
+	const query = `INSERT INTO refresh_tokens(user_id,token_hash,device_info,ip_address, expires_at, last_used_at) VALUES($1,$2,$3,$4,$5,$6)`
 
 	stmt, err := ar.db.PrepareContext(ctx, query)
 	if err != nil {
@@ -73,7 +73,7 @@ func (ar *Repository) InsertRefreshToken(
 }
 
 func (ar *Repository) GetRefreshTokenByTokenHash(ctx context.Context, tokenHash string) (TokenWithUser, error) {
-	query := `
+	const query = `
 	SELECT 
 		rt.id,
 		rt.user_id,
@@ -126,7 +126,7 @@ func (ar *Repository) GetRefreshTokenByTokenHash(ctx context.Context, tokenHash 
 }
 
 func (ar *Repository) UpdateLastTimeUsedToken(ctx context.Context, refreshToken string) error {
-	query := `
+	const query = `
 	UPDATE refresh_tokens SET last_used_at = $1 WHERE token_hash = $2	
 	`
 
@@ -159,7 +159,7 @@ func (ar *Repository) UpdateLastTimeUsedToken(ctx context.Context, refreshToken 
 }
 
 func (ar *Repository) RemoveTokenByToken(ctx context.Context, refreshToken string) error {
-	query := "DELETE FROM refresh_tokens WHERE token_hash = $1"
+	const query = "DELETE FROM refresh_tokens WHERE token_hash = $1"
 
 	stmt, err := ar.db.PrepareContext(ctx, query)
 	if err != nil {
@@ -188,7 +188,7 @@ func (ar *Repository) RemoveTokenByToken(ctx context.Context, refreshToken strin
 }
 
 func (ar *Repository) RemoveTokensByUserID(ctx context.Context, userID int) error {
-	query := "DELETE FROM refresh_tokens WHERE user_id = $1"
+	const query = "DELETE FROM refresh_tokens WHERE user_id = $1"
 
 	stmt, err := ar.db.PrepareContext(ctx, query)
 	if err != nil {

@@ -17,9 +17,9 @@ import (
 const authTimeout = 2 * time.Second
 
 type authService interface {
-	Register(ctx context.Context, register Register) error
+	Register(ctx context.Context, register RegisterRequest) error
 	Login(ctx context.Context,
-		login Login,
+		login LoginRequest,
 		ipAddress string,
 		deviceInfo string,
 	) (string, []byte, error)
@@ -58,7 +58,7 @@ func (ah *Handler) Register(w http.ResponseWriter, r *http.Request) error {
 	ctx, cancel := context.WithTimeout(r.Context(), authTimeout)
 	defer cancel()
 
-	reqData, err := request.ReadBody[Register](r)
+	reqData, err := request.ReadBody[RegisterRequest](r)
 	if err != nil {
 		return commonerrors.Validation("provided invalid json format")
 	}
@@ -81,7 +81,7 @@ func (ah *Handler) Login(w http.ResponseWriter, r *http.Request) error {
 	ctx, cancel := context.WithTimeout(r.Context(), authTimeout)
 	defer cancel()
 
-	reqData, err := request.ReadBody[Login](r)
+	reqData, err := request.ReadBody[LoginRequest](r)
 	if err != nil {
 		return commonerrors.Validation("provided invalid json format")
 	}
@@ -170,7 +170,7 @@ func (ah *Handler) Logout(w http.ResponseWriter, r *http.Request) error {
 	ctx, cancel := context.WithTimeout(r.Context(), authTimeout)
 	defer cancel()
 
-	err := ah.authenticationMiddleware.BlacklistUser(r)
+	err := ah.authenticationMiddleware.RevokeAccessToken(r)
 	if err != nil {
 		return ah.handleTimeout(err, r.URL.Path)
 	}

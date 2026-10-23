@@ -59,7 +59,7 @@ func (am *Middleware) HashToken(token []byte) string {
 	return hex.EncodeToString(hasher.Sum(nil))
 }
 
-func (am *Middleware) GenerateAccessToken(user user.Instance) (string, error) {
+func (am *Middleware) GenerateAccessToken(user user.Account) (string, error) {
 	am.logger.Info("started signing a new access token", nil)
 	tokenWithData := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"id":       user.ID,
@@ -169,7 +169,7 @@ func (am *Middleware) VerifyToken(r *http.Request) (*http.Request, error) {
 	return r, nil
 }
 
-func (am *Middleware) BlacklistUser(r *http.Request) error {
+func (am *Middleware) RevokeAccessToken(r *http.Request) error {
 	ctx := r.Context()
 
 	token, err := am.readTokenFromRequest(r)

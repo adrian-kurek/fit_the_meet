@@ -29,7 +29,7 @@ func NewRepository(db *sql.DB, logger commoninterfaces.Logger) *Repository {
 }
 
 func (ur *Repository) ExistsByEmail(ctx context.Context, email string) (bool, error) {
-	query := "SELECT id FROM users WHERE email = $1"
+	const query = "SELECT id FROM users WHERE email = $1"
 
 	stmt, err := ur.db.PrepareContext(ctx, query)
 	if err != nil {
@@ -68,7 +68,7 @@ func (ur *Repository) ExistsByEmail(ctx context.Context, email string) (bool, er
 }
 
 func (ur *Repository) Insert(ctx context.Context, username, email, password string) error {
-	query := "INSERT INTO users(username,email,password) VALUES($1,$2,$3)"
+	const query = "INSERT INTO users(username,email,password) VALUES($1,$2,$3)"
 
 	stmt, err := ur.db.PrepareContext(ctx, query)
 	if err != nil {
@@ -101,7 +101,7 @@ func (ur *Repository) Insert(ctx context.Context, username, email, password stri
 }
 
 func (ur *Repository) GetByEmail(ctx context.Context, email string) (Account, error) {
-	query := "SELECT id,email,username,password FROM users WHERE email = $1"
+	const query = "SELECT id,email,username,password FROM users WHERE email = $1"
 
 	stmt, err := ur.db.PrepareContext(ctx, query)
 	if err != nil {

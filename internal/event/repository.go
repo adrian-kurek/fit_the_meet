@@ -38,7 +38,7 @@ const (
 )
 
 func (er *Repository) Insert(ctx context.Context, userID int, code string, event Input) error {
-	query := "INSERT INTO events(name,description, duration_minutes, code, created_by) VALUES($1,$2,$3,$4,$5)"
+	const query = "INSERT INTO events(name,description, duration_minutes, code, created_by) VALUES($1,$2,$3,$4,$5)"
 
 	stmt, err := er.db.PrepareContext(ctx, query)
 	if err != nil {
@@ -74,7 +74,7 @@ func (er *Repository) Insert(ctx context.Context, userID int, code string, event
 }
 
 func (er *Repository) ToggleActive(ctx context.Context, eventID, userID int) error {
-	query := "UPDATE events SET is_active = NOT is_active WHERE id=$1 AND created_by = $2"
+	const query = "UPDATE events SET is_active = NOT is_active WHERE id=$1 AND created_by = $2"
 
 	stmt, err := er.db.PrepareContext(ctx, query)
 	if err != nil {

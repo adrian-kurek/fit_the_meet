@@ -32,7 +32,7 @@ func NewRepository(db *sql.DB, logger commoninterfaces.Logger) *Repository {
 }
 
 func (gr *Repository) Insert(ctx context.Context, name string, userID int) error {
-	query := "INSERT INTO groups(name,created_by) VALUES($1,$2)"
+	const query = "INSERT INTO groups(name,created_by) VALUES($1,$2)"
 
 	stmt, err := gr.db.PrepareContext(ctx, query)
 	if err != nil {
@@ -65,7 +65,7 @@ func (gr *Repository) Insert(ctx context.Context, name string, userID int) error
 }
 
 func (gr *Repository) UpdateName(ctx context.Context, name string, groupID, userID int) error {
-	query := "UPDATE groups SET name = $1 WHERE id=$2 AND created_by = $3"
+	const query = "UPDATE groups SET name = $1 WHERE id=$2 AND created_by = $3"
 
 	stmt, err := gr.db.PrepareContext(ctx, query)
 	if err != nil {
@@ -99,7 +99,7 @@ func (gr *Repository) UpdateName(ctx context.Context, name string, groupID, user
 }
 
 func (gr *Repository) DeleteOwnedGroup(ctx context.Context, groupID, userID int) error {
-	query := "DELETE FROM groups WHERE id=$1 AND created_by = $2"
+	const query = "DELETE FROM groups WHERE id=$1 AND created_by = $2"
 
 	stmt, err := gr.db.PrepareContext(ctx, query)
 	if err != nil {
@@ -132,7 +132,7 @@ func (gr *Repository) DeleteOwnedGroup(ctx context.Context, groupID, userID int)
 }
 
 func (gr *Repository) RemoveParticipants(ctx context.Context, groupID, userID int, participants []int) error {
-	query := `DELETE FROM group_participants gp USING groups g
+	const query = `DELETE FROM group_participants gp USING groups g
 		WHERE gp.group_id = g.id
 		AND gp.user_id = ANY($1)
 		AND g.id = $2
@@ -171,7 +171,7 @@ func (gr *Repository) RemoveParticipants(ctx context.Context, groupID, userID in
 }
 
 func (gr *Repository) VerifyOwnership(ctx context.Context, groupID, userID int) error {
-	query := `SELECT id FROM groups WHERE id = $1 AND created_by = $2`
+	const query = `SELECT id FROM groups WHERE id = $1 AND created_by = $2`
 
 	stmt, err := gr.db.PrepareContext(ctx, query)
 	if err != nil {
@@ -206,7 +206,7 @@ func (gr *Repository) VerifyOwnership(ctx context.Context, groupID, userID int) 
 }
 
 func (gr *Repository) SaveInviteCode(ctx context.Context, groupID int, code string, expiresAt time.Time) error {
-	query := "INSERT INTO group_activation_codes(group_id,code,expires_at) VALUES($1,$2,$3)"
+	const query = "INSERT INTO group_activation_codes(group_id,code,expires_at) VALUES($1,$2,$3)"
 
 	stmt, err := gr.db.PrepareContext(ctx, query)
 	if err != nil {
@@ -240,7 +240,7 @@ func (gr *Repository) SaveInviteCode(ctx context.Context, groupID int, code stri
 }
 
 func (gr *Repository) FindGroupIDByInviteCode(ctx context.Context, code string) (int, error) {
-	query := `SELECT group_id FROM group_activation_codes WHERE code = $1 AND expires_at > NOW()`
+	const query = `SELECT group_id FROM group_activation_codes WHERE code = $1 AND expires_at > NOW()`
 
 	stmt, err := gr.db.PrepareContext(ctx, query)
 	if err != nil {
@@ -274,7 +274,7 @@ func (gr *Repository) FindGroupIDByInviteCode(ctx context.Context, code string) 
 }
 
 func (gr *Repository) AddMember(ctx context.Context, groupID, userID int) error {
-	query := "INSERT INTO group_participants (group_id, user_id) VALUES($1, $2)"
+	const query = "INSERT INTO group_participants (group_id, user_id) VALUES($1, $2)"
 
 	stmt, err := gr.db.PrepareContext(ctx, query)
 	if err != nil {

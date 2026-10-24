@@ -4,10 +4,12 @@ import (
 	"context"
 
 	commoninterfaces "github.com/adrian-kurek/fit_the_meet/common/interfaces"
+	"github.com/google/uuid"
 )
 
 type pollRepository interface {
-	Insert(ctx context.Context, userID, eventID int) error
+	Create(ctx context.Context, userID int, code string, poll Input) error
+	InsertAnswers(ctx context.Context, pollID, userID int, answers []Answer) error
 }
 
 type Service struct {
@@ -23,5 +25,10 @@ func NewService(pollRepository pollRepository, logger commoninterfaces.Logger) *
 }
 
 func (ps *Service) Create(ctx context.Context, userID int, poll Input) error {
-	return nil
+	code := uuid.New().String()
+	return ps.pollRepository.Create(ctx, userID, code, poll)
+}
+
+func (ps *Service) SubmitAnswers(ctx context.Context, userID, pollID int, answers SubmitAnswers) error {
+	return ps.pollRepository.InsertAnswers(ctx, pollID, userID, answers.Answers)
 }

@@ -30,72 +30,110 @@ func NewRepository(db *sql.DB, logger commoninterfaces.Logger) *Repository {
 	}
 }
 
-func (pr *Repository) Insert(ctx context.Context, userID, eventID int) error {
-	const query = "INSERT INTO polls(event_id,created_by) VALUES($1,$2)"
-
-	stmt, err := pr.db.PrepareContext(ctx, query)
+func (pr *Repository) Create(ctx context.Context, userID int, code string, poll Input) error {
+	tx, err := pr.db.BeginTx(ctx, nil)
 	if err != nil {
-		pr.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
-			queryMsg: query,
-			errorMsg: err.Error(),
-		})
 		return err
 	}
 	defer func() {
-		if closeErr := stmt.Close(); closeErr != nil {
-			pr.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
+		if rollbackErr := tx.Rollback(); rollbackErr != nil && rollbackErr != sql.ErrTxDone {
+			pr.logger.Error("failed to roll back poll creation", "err", rollbackErr)
 		}
 	}()
 
-	_, err = stmt.ExecContext(ctx, userID, eventID)
+	eventID, err := pr.insertEvent(ctx, tx, userID, code, poll)
 	if err != nil {
-		pr.logger.Error(commonerrors.FailedToExecuteInsertQuery, "data", map[string]any{
-			queryMsg: query,
-			argsMsg: map[string]any{
-				userIDMsg: userID,
-				"eventID": eventID,
-			},
-			errorMsg: err,
-		})
 		return err
 	}
 
-	return nil
+	pollID, err := pr.insertPoll(ctx, tx, userID, eventID)
+	if err != nil {
+		return err
+	}
+
+	if err = pr.insertOptions(ctx, tx, pollID, poll.Options); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
-func (pr *Repository) InsertOptions(ctx context.Context, pollID, options []Option) error {
-	args := make([]any, len(options))
-	placeholders := make([]string, len(options))
-	for i, option := range options {
-		args = append(args, pollID, option.StartTime, option.EndTime)
-		placeholders = append(placeholders, fmt.Sprintf("($%d,$%d,$%d)", i*3+1, i*3+2, i*3+3))
+func (pr *Repository) insertEvent(
+	ctx context.Context,
+	tx *sql.Tx,
+	userID int,
+	code string,
+	poll Input,
+) (int, error) {
+	const query = `INSERT INTO events(name, description, duration_minutes, code, created_by)
+		VALUES($1, $2, $3, $4, $5)
+		RETURNING id`
 
-	}
-
-	query := fmt.Sprintf("INSERT INTO poll_options(poll_id, start_time, end_time) VALUES %s", strings.Join(placeholders, ","))
-
-	stmt, err := pr.db.PrepareContext(ctx, query)
-	if err != nil {
-		pr.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
-			queryMsg: query,
-			errorMsg: err.Error(),
-		})
-		return err
-	}
-	defer func() {
-		if closeErr := stmt.Close(); closeErr != nil {
-			pr.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
-		}
-	}()
-
-	_, err = stmt.ExecContext(ctx, args...)
+	var eventID int
+	err := tx.QueryRowContext(
+		ctx,
+		query,
+		poll.Name,
+		poll.Description,
+		poll.DurationMinutes,
+		code,
+		userID,
+	).Scan(&eventID)
 	if err != nil {
 		pr.logger.Error(commonerrors.FailedToExecuteInsertQuery, "data", map[string]any{
 			queryMsg: query,
-			argsMsg: map[string]any{
-				"pollID":  pollID,
-				"options": options,
-			},
+			errorMsg: err,
+		})
+		return 0, err
+	}
+
+	return eventID, nil
+}
+
+func (pr *Repository) insertPoll(ctx context.Context, tx *sql.Tx, userID, eventID int) (int, error) {
+	const query = `INSERT INTO polls(event_id, created_by)
+		VALUES($1, $2)
+		RETURNING id`
+
+	var pollID int
+	err := tx.QueryRowContext(ctx, query, eventID, userID).Scan(&pollID)
+	if err != nil {
+		pr.logger.Error(commonerrors.FailedToExecuteInsertQuery, "data", map[string]any{
+			queryMsg: query,
+			errorMsg: err,
+		})
+		return 0, err
+	}
+
+	return pollID, nil
+}
+
+func (pr *Repository) insertOptions(ctx context.Context, tx *sql.Tx, pollID int, options []Option) error {
+	if len(options) == 0 {
+		return commonerrors.Validation("at least one poll option is required")
+	}
+
+	args := make([]any, 0, len(options)*3)
+	placeholders := make([]string, 0, len(options))
+	for i, option := range options {
+		argumentStart := i * 3
+		args = append(args, pollID, option.StartTime, option.EndTime)
+		placeholders = append(placeholders, fmt.Sprintf(
+			"($%d, $%d, $%d)",
+			argumentStart+1,
+			argumentStart+2,
+			argumentStart+3,
+		))
+	}
+
+	query := fmt.Sprintf(
+		"INSERT INTO poll_options(poll_id, start_time, end_time) VALUES %s",
+		strings.Join(placeholders, ","),
+	)
+	_, err := tx.ExecContext(ctx, query, args...)
+	if err != nil {
+		pr.logger.Error(commonerrors.FailedToExecuteInsertQuery, "data", map[string]any{
+			queryMsg: query,
 			errorMsg: err,
 		})
 		return err

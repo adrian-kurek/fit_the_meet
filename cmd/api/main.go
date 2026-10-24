@@ -15,6 +15,7 @@ import (
 	"github.com/adrian-kurek/fit_the_meet/internal/auth"
 	"github.com/adrian-kurek/fit_the_meet/internal/event"
 	"github.com/adrian-kurek/fit_the_meet/internal/group"
+	"github.com/adrian-kurek/fit_the_meet/internal/poll"
 	"github.com/adrian-kurek/fit_the_meet/internal/server"
 	"github.com/adrian-kurek/fit_the_meet/internal/user"
 	"github.com/joho/godotenv"
@@ -45,12 +46,17 @@ func bootstrapHTTPServer(
 	eventService := event.NewService(eventRepository, logger)
 	eventHandler := event.NewHandler(eventService, authenticationMiddleware, logger)
 
+	pollRepository := poll.NewRepository(db, logger)
+	pollService := poll.NewService(pollRepository, logger)
+	pollHandler := poll.NewHandler(pollService, authenticationMiddleware, logger)
+
 	dependenciesConfig := server.NewDependencyConfig(
 		port,
 		logger,
 		authHandler,
 		groupHandler,
 		eventHandler,
+		pollHandler,
 	)
 	return server.NewHTTP(dependenciesConfig)
 }

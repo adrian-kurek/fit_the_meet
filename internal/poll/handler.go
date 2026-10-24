@@ -4,16 +4,19 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	commonerrors "github.com/adrian-kurek/fit_the_meet/common/errors"
 	commoninterfaces "github.com/adrian-kurek/fit_the_meet/common/interfaces"
 	"github.com/adrian-kurek/fit_the_meet/common/request"
+	"github.com/adrian-kurek/fit_the_meet/common/response"
 	"github.com/adrian-kurek/fit_the_meet/common/validation"
 )
 
 type pollService interface {
 	Create(ctx context.Context, userID int, poll Input) error
+	SubmitAnswers(ctx context.Context, userID, pollID int, answers SubmitAnswers) error
 }
 
 const timeout = 5 * time.Second
@@ -72,5 +75,44 @@ func (ph *Handler) Create(w http.ResponseWriter, r *http.Request) error {
 		return ph.handleTimeout(err, r.URL.Path)
 	}
 
+	response.Send(w, http.StatusCreated, nil)
+	return nil
+}
+
+func (ph *Handler) SubmitAnswers(w http.ResponseWriter, r *http.Request) error {
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	defer cancel()
+
+	r, err := ph.authenticationMiddleware.VerifyToken(r)
+	if err != nil {
+		return ph.handleTimeout(err, r.URL.Path)
+	}
+
+	userID, err := request.ReadUserIDFromToken(r)
+	if err != nil {
+		return err
+	}
+
+	reqData, err := request.ReadBody[SubmitAnswers](r)
+	if err != nil {
+		return commonerrors.Validation("provided invalid json format")
+	}
+
+	err = validation.ValidateRequestData(reqData)
+	if err != nil {
+		return err
+	}
+
+	pollID, err := strconv.Atoi(r.PathValue("pollID"))
+	if err != nil || pollID <= 0 {
+		return commonerrors.Validation("invalid poll ID")
+	}
+
+	err = ph.pollService.SubmitAnswers(ctx, userID, pollID, *reqData)
+	if err != nil {
+		return ph.handleTimeout(err, r.URL.Path)
+	}
+
+	response.Send(w, http.StatusNoContent, nil)
 	return nil
 }

@@ -16,7 +16,7 @@ import {
   NumberInput,
   Paper,
   PasswordInput,
-  Progress,
+  SegmentedControl,
   Select,
   Stack,
   Text,
@@ -27,6 +27,14 @@ import {
   UnstyledButton,
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
+import {
+  ApiError,
+  authApi,
+  AvailabilityTimeBlock,
+  eventApi,
+  LoginCredentials,
+  RegistrationDetails,
+} from './api';
 
 type IconName =
   | 'calendar'
@@ -55,6 +63,10 @@ type TimeOption = {
   votes: number;
 };
 
+type AvailabilityDraft = AvailabilityTimeBlock & {
+  key: number;
+};
+
 type Meeting = {
   id: number;
   title: string;
@@ -72,8 +84,32 @@ type Meeting = {
   icon: IconName;
   attendees: string[];
   favorite?: boolean;
+  isActive?: boolean;
+  apiId?: number | null;
   options: TimeOption[];
 };
+
+function availabilityFromOption(option: TimeOption): AvailabilityDraft {
+  const dateMatch = option.label.match(/(\d{1,2})\s(Oct|Nov)/);
+  const month = dateMatch?.[2] === 'Nov' ? '11' : '10';
+  const day = dateMatch?.[1].padStart(2, '0') || '26';
+  const [startTime = '09:00', endTime = '10:00'] = option.detail.split('–');
+  return {
+    key: option.id,
+    date: `2026-${month}-${day}`,
+    start_time: startTime,
+    end_time: endTime,
+  };
+}
+
+function emptyAvailabilityBlock(offset = 0): AvailabilityDraft {
+  return {
+    key: Date.now() + offset,
+    date: '2026-10-26',
+    start_time: '09:00',
+    end_time: '10:00',
+  };
+}
 
 const initialMeetings: Meeting[] = [
   {
@@ -208,7 +244,7 @@ const initialMeetings: Meeting[] = [
 ];
 
 const filterItems = [
-  { id: 'all', label: 'All meetings', icon: 'home' as IconName, color: '#252525' },
+  { id: 'all', label: 'All events', icon: 'home' as IconName, color: '#252525' },
   { id: 'needs-response', label: 'Needs your response', icon: 'sparkle' as IconName, color: '#e9346f' },
   { id: 'this-week', label: 'This week', icon: 'calendar' as IconName, color: '#6f45ed' },
   { id: 'ready', label: 'Ready to schedule', icon: 'check' as IconName, color: '#078fa4' },
@@ -258,32 +294,62 @@ function statusLabel(status: MeetingStatus) {
 }
 
 type AuthMode = 'login' | 'register';
+type Session = { kind: 'demo' } | { kind: 'api'; accessToken: string };
+
+function errorMessage(error: unknown) {
+  if (error instanceof ApiError) return error.message;
+  return 'Something went wrong. Please try again.';
+}
 
 function AuthScreen({
   mode,
   onModeChange,
-  onAuthenticated,
+  onLogin,
+  onRegister,
+  onDemo,
 }: {
   mode: AuthMode;
   onModeChange: (mode: AuthMode) => void;
-  onAuthenticated: () => void;
+  onLogin: (credentials: LoginCredentials, remember: boolean) => Promise<void>;
+  onRegister: (details: RegistrationDetails) => Promise<void>;
+  onDemo: () => void;
 }) {
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const isLogin = mode === 'login';
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError('');
+    setNotice('');
     const form = new FormData(event.currentTarget);
     if (!isLogin && form.get('password') !== form.get('confirmPassword')) {
       setError('Passwords do not match.');
       return;
     }
-    onAuthenticated();
+
+    setSubmitting(true);
+    try {
+      const email = String(form.get('email'));
+      const password = String(form.get('password'));
+      if (isLogin) {
+        await onLogin({ email, password }, form.get('remember') === 'on');
+      } else {
+        await onRegister({ username: String(form.get('username')), email, password });
+        onModeChange('login');
+        setNotice('Account created. Sign in with your new details.');
+      }
+    } catch (requestError) {
+      setError(errorMessage(requestError));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const switchMode = (nextMode: AuthMode) => {
     setError('');
+    setNotice('');
     onModeChange(nextMode);
   };
 
@@ -336,21 +402,22 @@ function AuthScreen({
 
         <Paper className="auth-card" radius="xl">
           <Text className="eyebrow">{isLogin ? 'Welcome back' : 'Create your workspace'}</Text>
-          <Title order={2} mt={5}>{isLogin ? 'Sign in to your meetings.' : 'Start finding better times.'}</Title>
+          <Title order={2} mt={5}>{isLogin ? 'Sign in to your events.' : 'Start finding better times.'}</Title>
           <Text c="dimmed" mt={9} size="sm">
-            {isLogin ? 'Your polls, groups, and decisions are waiting.' : 'Set up your account in under a minute.'}
+            {isLogin ? 'Your events, groups, and decisions are waiting.' : 'Set up your account in under a minute.'}
           </Text>
 
           <form key={mode} onSubmit={submit} className="auth-form">
             <Stack gap="md">
               {!isLogin && (
                 <TextInput
-                  name="name"
-                  label="Full name"
-                  placeholder="Alex Morgan"
+                  name="username"
+                  label="Username"
+                  placeholder="alexmorgan"
                   leftSection={<Icon name="user" size={18} />}
                   required
-                  autoComplete="name"
+                  minLength={6}
+                  autoComplete="username"
                 />
               )}
               <TextInput
@@ -385,7 +452,7 @@ function AuthScreen({
 
               {isLogin ? (
                 <Group justify="space-between" gap="sm">
-                  <Checkbox label="Keep me signed in" size="sm" />
+                  <Checkbox name="remember" label="Keep me signed in" size="sm" />
                   <Anchor component="button" type="button" size="sm" fw={750} c="violet">Forgot password?</Anchor>
                 </Group>
               ) : (
@@ -395,15 +462,16 @@ function AuthScreen({
                 />
               )}
 
+              {notice && <Text className="success-notice" role="status">{notice}</Text>}
               {error && <Text className="error-notice" role="alert">{error}</Text>}
-              <Button type="submit" className="auth-submit" size="lg">
+              <Button type="submit" className="auth-submit" size="lg" loading={submitting}>
                 {isLogin ? 'Sign in' : 'Create account'}
               </Button>
             </Stack>
           </form>
 
           <Divider label="or" labelPosition="center" my="xl" />
-          <Button fullWidth variant="outline" color="dark" className="demo-button" onClick={onAuthenticated}>
+          <Button fullWidth variant="outline" color="dark" className="demo-button" onClick={onDemo}>
             Explore the demo workspace
           </Button>
 
@@ -419,16 +487,29 @@ function AuthScreen({
   );
 }
 
-function Dashboard({ onLogout }: { onLogout: () => void }) {
+function Dashboard({ session, onLogout }: { session: Session; onLogout: () => void }) {
   const [meetings, setMeetings] = useState(initialMeetings);
   const [query, setQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
   const [sort, setSort] = useState('urgent');
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
-  const [selectedOptions, setSelectedOptions] = useState<Set<number>>(new Set());
+  const [managedEventId, setManagedEventId] = useState<number | string>('');
+  const [availabilityBlocks, setAvailabilityBlocks] = useState<AvailabilityDraft[]>([emptyAvailabilityBlock()]);
+  const [eventActive, setEventActive] = useState(true);
+  const [operationPending, setOperationPending] = useState(false);
   const [notice, setNotice] = useState('');
+  const [dashboardNotice, setDashboardNotice] = useState('');
+  const [creationMode, setCreationMode] = useState<'standalone' | 'group'>('standalone');
+  const [creationPending, setCreationPending] = useState(false);
+  const [creationError, setCreationError] = useState('');
   const [mobileFiltersOpened, mobileFilters] = useDisclosure(false);
   const [createOpened, createModal] = useDisclosure(false);
+
+  const closeCreateModal = () => {
+    setCreationError('');
+    setCreationMode('standalone');
+    createModal.close();
+  };
 
   const filteredMeetings = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -455,7 +536,9 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
 
   const openMeeting = (meeting: Meeting) => {
     setSelectedMeeting(meeting);
-    setSelectedOptions(new Set());
+    setManagedEventId(meeting.apiId === null ? '' : (meeting.apiId ?? meeting.id));
+    setAvailabilityBlocks(meeting.options.slice(0, 2).map(availabilityFromOption));
+    setEventActive(meeting.isActive ?? true);
     setNotice('');
   };
 
@@ -463,47 +546,131 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
     setMeetings((current) => current.map((meeting) => meeting.id === id ? { ...meeting, favorite: !meeting.favorite } : meeting));
   };
 
-  const saveVote = () => {
-    if (!selectedMeeting || selectedOptions.size === 0) {
-      setNotice('Select at least one time that works for you.');
+  const parsedManagedEventId = typeof managedEventId === 'number' ? managedEventId : Number(managedEventId);
+
+  const saveAvailability = async () => {
+    if (!selectedMeeting || !Number.isInteger(parsedManagedEventId) || parsedManagedEventId <= 0) {
+      setNotice('Enter a valid event ID before saving availability.');
       return;
     }
-    setMeetings((current) => current.map((meeting) => meeting.id === selectedMeeting.id
-      ? { ...meeting, status: 'collecting', responses: Math.min(meeting.responses + 1, meeting.participants) }
-      : meeting));
-    setNotice('Availability saved — thanks!');
+
+    if (!eventActive) {
+      setNotice('Activate the event before submitting availability.');
+      return;
+    }
+
+    if (availabilityBlocks.length === 0) {
+      setNotice('Add at least one availability block.');
+      return;
+    }
+
+    const invalidBlock = availabilityBlocks.find((block) => (
+      !block.date || !block.start_time || !block.end_time || block.start_time >= block.end_time
+    ));
+    if (invalidBlock) {
+      setNotice('Every block needs a date and a start time before its end time.');
+      return;
+    }
+
+    setOperationPending(true);
+    setNotice('');
+    try {
+      if (session.kind === 'api') {
+        const payload = availabilityBlocks.map(({ date, start_time, end_time }) => ({ date, start_time, end_time }));
+        await eventApi.saveAvailability(parsedManagedEventId, payload, session.accessToken);
+      }
+      setMeetings((current) => current.map((meeting) => meeting.id === selectedMeeting.id
+        ? { ...meeting, status: 'collecting', responses: Math.min(meeting.responses + 1, meeting.participants) }
+        : meeting));
+      setNotice(session.kind === 'demo' ? 'Availability saved in demo mode.' : 'Availability saved to your API.');
+    } catch (requestError) {
+      setNotice(errorMessage(requestError));
+    } finally {
+      setOperationPending(false);
+    }
   };
 
-  const createMeeting = (event: FormEvent<HTMLFormElement>) => {
+  const toggleEventActive = async () => {
+    if (!selectedMeeting || !Number.isInteger(parsedManagedEventId) || parsedManagedEventId <= 0) {
+      setNotice('Enter a valid event ID before changing its status.');
+      return;
+    }
+
+    setOperationPending(true);
+    setNotice('');
+    try {
+      if (session.kind === 'api') await eventApi.toggleActive(parsedManagedEventId, session.accessToken);
+      const nextActive = !eventActive;
+      setEventActive(nextActive);
+      setMeetings((current) => current.map((meeting) => meeting.id === selectedMeeting.id
+        ? { ...meeting, isActive: nextActive }
+        : meeting));
+      setNotice(`Event is now ${nextActive ? 'active' : 'inactive'}${session.kind === 'demo' ? ' in demo mode' : ''}.`);
+    } catch (requestError) {
+      setNotice(errorMessage(requestError));
+    } finally {
+      setOperationPending(false);
+    }
+  };
+
+  const createMeeting = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const title = String(form.get('title') || 'Untitled meeting');
-    const group = String(form.get('group') || 'Personal');
-    const duration = `${String(form.get('duration') || 30)} min`;
-    const next: Meeting = {
-      id: Math.max(...meetings.map((meeting) => meeting.id)) + 1,
-      title,
-      description: String(form.get('description') || 'A new meeting waiting for everyone’s availability.'),
-      group,
-      location: 'Remote',
-      organizer: 'You',
-      dateLabel: 'Just created',
-      duration,
-      responses: 1,
-      participants: 5,
-      status: 'collecting',
-      accent: '#6f45ed',
-      softAccent: '#f3efff',
-      icon: 'calendar',
-      attendees: ['YOU'],
-      options: [
-        { id: Date.now(), label: 'Monday, 2 Nov', detail: '10:00–10:30', votes: 1 },
-        { id: Date.now() + 1, label: 'Tuesday, 3 Nov', detail: '14:00–14:30', votes: 1 },
-      ],
-    };
-    setMeetings((current) => [next, ...current]);
-    setActiveFilter('all');
-    createModal.close();
+    const title = String(form.get('title') || 'Untitled event');
+    const durationMinutes = Number(form.get('duration') || 30);
+    const groupId = creationMode === 'group' ? Number(form.get('groupId')) : undefined;
+    if (creationMode === 'group' && (!Number.isInteger(groupId) || Number(groupId) <= 0)) {
+      setCreationError('Enter a valid group ID.');
+      return;
+    }
+
+    setCreationPending(true);
+    setCreationError('');
+    try {
+      if (session.kind === 'api') {
+        await eventApi.create({
+          name: title,
+          description: String(form.get('description') || ''),
+          duration_minutes: durationMinutes,
+        }, session.accessToken, groupId);
+      }
+
+      const nextId = Math.max(...meetings.map((meeting) => meeting.id)) + 1;
+      const group = groupId ? `Group #${groupId}` : 'Personal';
+      const next: Meeting = {
+        id: nextId,
+        title,
+        description: String(form.get('description') || 'A new event waiting for everyone’s availability.'),
+        group,
+        location: 'Remote',
+        organizer: 'You',
+        dateLabel: 'Just created',
+        duration: `${durationMinutes} min`,
+        responses: 0,
+        participants: 5,
+        status: 'collecting',
+        accent: '#6f45ed',
+        softAccent: '#f3efff',
+        icon: 'calendar',
+        attendees: ['YOU'],
+        isActive: true,
+        apiId: session.kind === 'demo' ? nextId : null,
+        options: [
+          { id: Date.now(), label: 'Monday, 2 Nov', detail: '10:00–10:30', votes: 1 },
+          { id: Date.now() + 1, label: 'Tuesday, 3 Nov', detail: '14:00–14:30', votes: 1 },
+        ],
+      };
+      setMeetings((current) => [next, ...current]);
+      setActiveFilter('all');
+      setDashboardNotice(session.kind === 'demo'
+        ? 'Event created in demo mode.'
+        : 'Event created through your API. The current create response does not include its new ID.');
+      closeCreateModal();
+    } catch (requestError) {
+      setCreationError(errorMessage(requestError));
+    } finally {
+      setCreationPending(false);
+    }
   };
 
   const countFor = (id: string) => {
@@ -560,7 +727,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
     <Box className="app-shell">
       <header className="topbar">
         <Group className="brand-wrap" gap={10} wrap="nowrap">
-          <Burger opened={mobileFiltersOpened} onClick={mobileFilters.toggle} hiddenFrom="md" size="sm" aria-label="Open meeting filters" />
+          <Burger opened={mobileFiltersOpened} onClick={mobileFilters.toggle} hiddenFrom="md" size="sm" aria-label="Open event filters" />
           <div className="brand-mark"><Icon name="calendar" size={22} stroke={2.2} /></div>
           <div className="brand">fit<span>the</span>meet<i>.</i></div>
         </Group>
@@ -569,14 +736,14 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
           <TextInput
             value={query}
             onChange={(event) => setQuery(event.currentTarget.value)}
-            placeholder="Search meetings, groups, people…"
+            placeholder="Search events, groups, people…"
             leftSection={<Icon name="search" size={21} />}
             variant="unstyled"
-            aria-label="Search meetings"
+            aria-label="Search events"
           />
           <Divider orientation="vertical" />
           <Button className="workspace-button" variant="subtle" color="dark" leftSection={<Icon name="group" size={19} />}>
-            My workspace
+            Event workspace
           </Button>
           <Divider orientation="vertical" />
           <ActionIcon variant="subtle" color="gray" radius="xl" size="lg" aria-label="Workspace settings">
@@ -585,7 +752,8 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
         </Paper>
 
         <Group gap={10} wrap="nowrap">
-          <Button className="create-button" leftSection={<Icon name="plus" size={19} />} onClick={createModal.open}>New meeting</Button>
+          {session.kind === 'demo' && <Badge className="mode-badge">Demo</Badge>}
+          <Button className="create-button" leftSection={<Icon name="plus" size={19} />} onClick={createModal.open}>New event</Button>
           <Menu position="bottom-end" shadow="md" width={210}>
             <Menu.Target>
               <UnstyledButton className="avatar-button" aria-label="Open account menu">
@@ -607,8 +775,10 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
           <Group justify="space-between" align="flex-end" className="content-heading">
             <Box>
               <Text className="eyebrow">Sunday, 25 October</Text>
-              <Title order={1}>Find the time that fits.</Title>
-              <Text c="dimmed" mt={6}>You have <strong>{countFor('needs-response')} meetings</strong> waiting for your response.</Text>
+              <Title order={1}>Plan events without the chase.</Title>
+              <Text c="dimmed" mt={6}>
+                You have <strong>{countFor('needs-response')} {countFor('needs-response') === 1 ? 'event' : 'events'}</strong> waiting for your availability.
+              </Text>
             </Box>
             <Select
               className="sort-select"
@@ -621,9 +791,23 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
               ]}
               allowDeselect={false}
               leftSection={<Icon name="filter" size={17} />}
-              aria-label="Sort meetings"
+              aria-label="Sort events"
             />
           </Group>
+
+          {dashboardNotice && (
+            <Text className="success-notice dashboard-notice" role="status" mt={18}>
+              {dashboardNotice}
+              <button type="button" onClick={() => setDashboardNotice('')} aria-label="Dismiss notification">×</button>
+            </Text>
+          )}
+
+          {session.kind === 'api' && (
+            <Paper className="api-scope-note" radius="lg" mt={18}>
+              <ThemeIcon color="violet" variant="light" radius="xl"><Icon name="sparkle" size={16} /></ThemeIcon>
+              <Text size="sm"><strong>Connected to your Go API.</strong> Your backend has mutation routes but no event-list route yet, so the cards below remain workspace previews. Enter the real event ID in the event drawer before updating it.</Text>
+            </Paper>
+          )}
 
           <Stack gap={21} mt={28}>
             {filteredMeetings.map((meeting) => (
@@ -638,6 +822,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
                     <Group gap={10} wrap="nowrap">
                       <Title order={2}>{meeting.title}</Title>
                       {meeting.status === 'needs-response' && <span className="attention-dot" title="Needs your response" />}
+                      {meeting.isActive === false && <Badge color="gray" variant="light" size="sm">Inactive</Badge>}
                     </Group>
                     <Text className="meeting-description">{meeting.description}</Text>
                   </Box>
@@ -673,7 +858,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
           {filteredMeetings.length === 0 && (
             <Paper className="empty-state" radius="xl">
               <ThemeIcon color="violet" variant="light" radius="xl" size={52}><Icon name="search" /></ThemeIcon>
-              <Title order={3} mt={16}>No meetings found</Title>
+              <Title order={3} mt={16}>No events found</Title>
               <Text c="dimmed" mt={5}>Try a different search or filter.</Text>
               <Button variant="light" color="dark" mt={18} onClick={() => { setQuery(''); setActiveFilter('all'); }}>Clear filters</Button>
             </Paper>
@@ -681,7 +866,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
         </section>
       </main>
 
-      <Drawer opened={mobileFiltersOpened} onClose={mobileFilters.close} title={<span className="drawer-title">Browse meetings</span>} size="xs" padding="lg">
+      <Drawer opened={mobileFiltersOpened} onClose={mobileFilters.close} title={<span className="drawer-title">Browse events</span>} size="xs" padding="lg">
         <SidebarContent />
       </Drawer>
 
@@ -691,7 +876,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
         position="right"
         size={480}
         padding="xl"
-        title={<span className="drawer-title">Meeting poll</span>}
+        title={<span className="drawer-title">Event workspace</span>}
         overlayProps={{ backgroundOpacity: 0.18, blur: 2 }}
       >
         {selectedMeeting && (
@@ -709,70 +894,126 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
               <span className="meta-item dark"><Icon name="group" size={18} />{selectedMeeting.participants} invited</span>
             </Group>
 
-            <Paper className="response-panel" radius="xl">
-              <Group justify="space-between">
-                <Text fw={800}>Response progress</Text>
-                <Text fw={800}>{Math.round(selectedMeeting.responses / selectedMeeting.participants * 100)}%</Text>
+            <Paper className="event-control-panel" radius="xl">
+              <Group justify="space-between" align="flex-start" wrap="nowrap">
+                <Box>
+                  <Text fw={850}>API event</Text>
+                  <Text size="xs" c="dimmed" mt={2}>Used by status and availability actions.</Text>
+                </Box>
+                <Badge color={eventActive ? 'green' : 'gray'} variant="light">{eventActive ? 'Active' : 'Inactive'}</Badge>
               </Group>
-              <Progress value={selectedMeeting.responses / selectedMeeting.participants * 100} color="dark" radius="xl" size="md" mt={12} />
-              <Group justify="space-between" mt={14}>
-                <Avatar.Group spacing="sm">
-                  {selectedMeeting.attendees.map((attendee, index) => <Avatar key={attendee} color={['violet', 'pink', 'cyan', 'orange'][index]} size="sm">{attendee}</Avatar>)}
-                </Avatar.Group>
-                <Text size="sm" c="dimmed">{selectedMeeting.responses} of {selectedMeeting.participants} replied</Text>
-              </Group>
+              <NumberInput
+                label="Event ID"
+                value={managedEventId}
+                onChange={setManagedEventId}
+                min={1}
+                allowDecimal={false}
+                placeholder="e.g. 42"
+                mt="md"
+              />
+              <Button
+                fullWidth
+                mt="md"
+                variant="outline"
+                color={eventActive ? 'red' : 'green'}
+                loading={operationPending}
+                onClick={toggleEventActive}
+              >
+                {session.kind === 'api' ? 'Toggle active status' : (eventActive ? 'Deactivate event' : 'Activate event')}
+              </Button>
             </Paper>
 
             <Box>
-              <Title order={3}>When can you make it?</Title>
-              <Text size="sm" c="dimmed" mt={4}>Select every option that works.</Text>
-              <Stack gap={11} mt={15}>
-                {selectedMeeting.options.map((option) => {
-                  const selected = selectedOptions.has(option.id);
-                  return (
-                    <UnstyledButton
-                      key={option.id}
-                      className={`time-option ${selected ? 'is-selected' : ''}`}
-                      onClick={() => setSelectedOptions((current) => {
-                        const next = new Set(current);
-                        if (next.has(option.id)) next.delete(option.id); else next.add(option.id);
-                        return next;
-                      })}
-                    >
-                      <span className="option-check">{selected && <Icon name="check" size={17} stroke={2.4} />}</span>
-                      <span className="option-copy"><strong>{option.label}</strong><small>{option.detail}</small></span>
-                      <span className="option-votes">{option.votes} free</span>
-                    </UnstyledButton>
-                  );
-                })}
+              <Group justify="space-between" align="flex-start">
+                <Box>
+                  <Title order={3}>Your availability</Title>
+                  <Text size="sm" c="dimmed" mt={4}>Add one or more date and time ranges.</Text>
+                </Box>
+                <Button
+                  size="xs"
+                  variant="light"
+                  color="dark"
+                  leftSection={<Icon name="plus" size={15} />}
+                  onClick={() => setAvailabilityBlocks((current) => [...current, emptyAvailabilityBlock(current.length)])}
+                >
+                  Add block
+                </Button>
+              </Group>
+              <Stack gap={12} mt={15}>
+                {availabilityBlocks.map((block, index) => (
+                  <Paper className="availability-block" radius="lg" key={block.key}>
+                    <Group justify="space-between" mb={10}>
+                      <Text size="xs" fw={850} c="dimmed">TIME BLOCK {index + 1}</Text>
+                      <Button
+                        size="compact-xs"
+                        variant="subtle"
+                        color="red"
+                        disabled={availabilityBlocks.length === 1}
+                        onClick={() => setAvailabilityBlocks((current) => current.filter((item) => item.key !== block.key))}
+                      >
+                        Remove
+                      </Button>
+                    </Group>
+                    <TextInput
+                      type="date"
+                      label="Date"
+                      value={block.date}
+                      onChange={(event) => setAvailabilityBlocks((current) => current.map((item) => item.key === block.key ? { ...item, date: event.currentTarget.value } : item))}
+                    />
+                    <Group grow mt="sm">
+                      <TextInput
+                        type="time"
+                        label="Start"
+                        value={block.start_time}
+                        onChange={(event) => setAvailabilityBlocks((current) => current.map((item) => item.key === block.key ? { ...item, start_time: event.currentTarget.value } : item))}
+                      />
+                      <TextInput
+                        type="time"
+                        label="End"
+                        value={block.end_time}
+                        onChange={(event) => setAvailabilityBlocks((current) => current.map((item) => item.key === block.key ? { ...item, end_time: event.currentTarget.value } : item))}
+                      />
+                    </Group>
+                  </Paper>
+                ))}
               </Stack>
             </Box>
 
-            {notice && <Text className={notice.startsWith('Availability') ? 'success-notice' : 'error-notice'}>{notice}</Text>}
-            <Button className="save-vote-button" size="lg" onClick={saveVote}>Save my availability</Button>
+            {notice && <Text role="status" className={/(saved|now active|now inactive)/i.test(notice) ? 'success-notice' : 'error-notice'}>{notice}</Text>}
+            <Button className="save-vote-button" size="lg" loading={operationPending} disabled={!eventActive} onClick={saveAvailability}>Save availability</Button>
           </Stack>
         )}
       </Drawer>
 
-      <Modal opened={createOpened} onClose={createModal.close} title={<span className="modal-title">Create a meeting poll</span>} centered size="lg" padding="xl" radius="xl">
+      <Modal opened={createOpened} onClose={closeCreateModal} title={<span className="modal-title">Create an event</span>} centered size="lg" padding="xl" radius="xl">
         <form onSubmit={createMeeting}>
           <Stack gap="md">
-            <Text c="dimmed" size="sm">Start with the essentials. You can fine-tune time options before inviting anyone.</Text>
-            <TextInput name="title" label="Meeting title" placeholder="e.g. November planning" required />
+            <Text c="dimmed" size="sm">Choose the standalone or group endpoint, then send the exact payload expected by your Go API.</Text>
+            <SegmentedControl
+              fullWidth
+              value={creationMode}
+              onChange={(value) => { setCreationMode(value as 'standalone' | 'group'); setCreationError(''); }}
+              data={[
+                { value: 'standalone', label: 'Standalone event' },
+                { value: 'group', label: 'Group event' },
+              ]}
+            />
+            <TextInput name="title" label="Event name" placeholder="e.g. November planning" required minLength={6} />
             <Textarea name="description" label="What is it about?" placeholder="Add a short agenda or context" minRows={3} />
-            <Group grow align="flex-start">
-              <Select name="group" label="Group" defaultValue="Product team" data={['Product team', 'Design circle', 'Engineering', 'Core team', 'Personal']} allowDeselect={false} />
-              <NumberInput name="duration" label="Duration (minutes)" defaultValue={30} min={15} max={240} step={15} />
-            </Group>
+            {creationMode === 'group' && (
+              <NumberInput name="groupId" label="Group ID" placeholder="e.g. 12" min={1} allowDecimal={false} required />
+            )}
+            <NumberInput name="duration" label="Duration (minutes)" defaultValue={30} min={1} max={1440} step={15} required />
             <Paper className="suggestion-box" radius="lg">
               <Group gap={10} wrap="nowrap">
                 <ThemeIcon color="violet" variant="light" radius="xl"><Icon name="sparkle" size={16} /></ThemeIcon>
-                <Box><Text fw={800} size="sm">Smart start</Text><Text c="dimmed" size="xs">We’ll suggest two slots based on your working hours.</Text></Box>
+                <Box><Text fw={800} size="sm">Exact endpoint</Text><Text c="dimmed" size="xs">{creationMode === 'group' ? 'POST /groups/{groupID}/events/' : 'POST /events/'}</Text></Box>
               </Group>
             </Paper>
+            {creationError && <Text className="error-notice" role="alert">{creationError}</Text>}
             <Group justify="flex-end" mt="sm">
-              <Button variant="subtle" color="dark" onClick={createModal.close}>Cancel</Button>
-              <Button type="submit" className="create-button">Create poll</Button>
+              <Button variant="subtle" color="dark" onClick={closeCreateModal}>Cancel</Button>
+              <Button type="submit" className="create-button" loading={creationPending}>Create event</Button>
             </Group>
           </Stack>
         </form>
@@ -781,21 +1022,51 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
   );
 }
 
+const accessTokenStorageKey = 'fit-the-meet-access-token';
+
+function storedSession(): Session | null {
+  const accessToken = localStorage.getItem(accessTokenStorageKey) || sessionStorage.getItem(accessTokenStorageKey);
+  return accessToken ? { kind: 'api', accessToken } : null;
+}
+
 function App() {
   const [authMode, setAuthMode] = useState<AuthMode>('login');
-  const [authenticated, setAuthenticated] = useState(false);
+  const [session, setSession] = useState<Session | null>(storedSession);
 
-  if (!authenticated) {
+  const login = async (credentials: LoginCredentials, remember: boolean) => {
+    const { token } = await authApi.login(credentials);
+    const storage = remember ? localStorage : sessionStorage;
+    const otherStorage = remember ? sessionStorage : localStorage;
+    storage.setItem(accessTokenStorageKey, token);
+    otherStorage.removeItem(accessTokenStorageKey);
+    setSession({ kind: 'api', accessToken: token });
+  };
+
+  const register = async (details: RegistrationDetails) => {
+    await authApi.register(details);
+  };
+
+  const logout = () => {
+    if (session?.kind === 'api') void authApi.logout(session.accessToken).catch(() => undefined);
+    localStorage.removeItem(accessTokenStorageKey);
+    sessionStorage.removeItem(accessTokenStorageKey);
+    setSession(null);
+    setAuthMode('login');
+  };
+
+  if (!session) {
     return (
       <AuthScreen
         mode={authMode}
         onModeChange={setAuthMode}
-        onAuthenticated={() => setAuthenticated(true)}
+        onLogin={login}
+        onRegister={register}
+        onDemo={() => setSession({ kind: 'demo' })}
       />
     );
   }
 
-  return <Dashboard onLogout={() => setAuthenticated(false)} />;
+  return <Dashboard session={session} onLogout={logout} />;
 }
 
 export default App;

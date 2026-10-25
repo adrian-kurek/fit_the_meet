@@ -10,6 +10,7 @@ import (
 type pollRepository interface {
 	Create(ctx context.Context, userID int, code string, poll Input) error
 	InsertAnswers(ctx context.Context, pollID, userID int, answers []Answer) error
+	ToggleActive(ctx context.Context, pollID, userID int) error
 }
 
 type Service struct {
@@ -31,4 +32,8 @@ func (ps *Service) Create(ctx context.Context, userID int, poll Input) error {
 
 func (ps *Service) SubmitAnswers(ctx context.Context, userID, pollID int, answers SubmitAnswers) error {
 	return ps.pollRepository.InsertAnswers(ctx, pollID, userID, answers.Answers)
+}
+
+func (ps *Service) ToggleActive(ctx context.Context, userID, pollID int) error {
+	return ps.pollRepository.ToggleActive(ctx, userID, pollID)
 }

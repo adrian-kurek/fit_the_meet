@@ -17,6 +17,7 @@ import (
 type pollService interface {
 	Create(ctx context.Context, userID int, poll Input) error
 	SubmitAnswers(ctx context.Context, userID, pollID int, answers SubmitAnswers) error
+	ToggleActive(ctx context.Context, userID, pollID int) error
 }
 
 const timeout = 5 * time.Second
@@ -114,5 +115,34 @@ func (ph *Handler) SubmitAnswers(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	response.Send(w, http.StatusNoContent, nil)
+	return nil
+}
+
+func (ph *Handler) ToggleActive(w http.ResponseWriter, r *http.Request) error {
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	defer cancel()
+
+	r, err := ph.authenticationMiddleware.VerifyToken(r)
+	if err != nil {
+		return ph.handleTimeout(err, r.URL.Path)
+	}
+
+	userID, err := request.ReadUserIDFromToken(r)
+	if err != nil {
+		return err
+	}
+
+	pollID, err := strconv.Atoi(r.PathValue("pollID"))
+	if err != nil || pollID <= 0 {
+		return commonerrors.Validation("invalid poll ID")
+	}
+
+	err = ph.pollService.ToggleActive(ctx, userID, pollID)
+	if err != nil {
+		return ph.handleTimeout(err, r.URL.Path)
+	}
+
+	response.Send(w, http.StatusNoContent, nil)
+
 	return nil
 }

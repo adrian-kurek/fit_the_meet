@@ -11,6 +11,7 @@ import (
 type pollHandler interface {
 	Create(w http.ResponseWriter, r *http.Request) error
 	SubmitAnswers(w http.ResponseWriter, r *http.Request) error
+	ToggleActive(w http.ResponseWriter, r *http.Request) error
 }
 
 type Routes struct {
@@ -32,5 +33,10 @@ func (pr *Routes) Setup(router *http.ServeMux) {
 	router.Handle(
 		fmt.Sprintf("POST %s/{pollID}/answers", prefix),
 		request.Make(pr.pollHandler.SubmitAnswers, pr.logger),
+	)
+
+	router.Handle(
+		fmt.Sprintf("PATCH %s/{pollID}", prefix),
+		request.Make(pr.pollHandler.ToggleActive, pr.logger),
 	)
 }

@@ -216,3 +216,36 @@ func (pr *Repository) InsertAnswers(ctx context.Context, pollID, userID int, ans
 
 	return nil
 }
+
+func (pr *Repository) ToggleActive(ctx context.Context, pollID, userID int) error {
+	const query = "UPDATE polls SET is_active = NOT  is_active WHERE created_by = $1 AND id = $2"
+
+	stmt, err := pr.db.PrepareContext(ctx, query)
+	if err != nil {
+		pr.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
+			queryMsg: query,
+			errorMsg: err.Error(),
+		})
+		return err
+	}
+	defer func() {
+		if closeErr := stmt.Close(); closeErr != nil {
+			pr.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
+		}
+	}()
+
+	_, err = stmt.ExecContext(ctx, userID, pollID)
+	if err != nil {
+		pr.logger.Error(commonerrors.FailedToExecuteUpdateQuery, "data", map[string]any{
+			queryMsg: query,
+			argsMsg: map[string]any{
+				"pollID":  pollID,
+				userIDMsg: userID,
+			},
+			errorMsg: err,
+		})
+		return err
+	}
+
+	return nil
+}

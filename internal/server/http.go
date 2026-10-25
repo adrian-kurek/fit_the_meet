@@ -29,6 +29,7 @@ type eventHandler interface {
 type pollHandler interface {
 	Create(w http.ResponseWriter, r *http.Request) error
 	SubmitAnswers(w http.ResponseWriter, r *http.Request) error
+	ToggleActive(w http.ResponseWriter, r *http.Request) error
 }
 
 type authHandler interface {

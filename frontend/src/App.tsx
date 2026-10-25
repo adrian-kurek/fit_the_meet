@@ -1,17 +1,21 @@
 import { FormEvent, useMemo, useState } from 'react';
 import {
   ActionIcon,
+  Anchor,
   Avatar,
   Badge,
   Box,
   Burger,
   Button,
+  Checkbox,
   Divider,
   Drawer,
   Group,
+  Menu,
   Modal,
   NumberInput,
   Paper,
+  PasswordInput,
   Progress,
   Select,
   Stack,
@@ -32,7 +36,9 @@ type IconName =
   | 'group'
   | 'heart'
   | 'home'
+  | 'lock'
   | 'location'
+  | 'mail'
   | 'plus'
   | 'search'
   | 'settings'
@@ -225,7 +231,9 @@ function Icon({ name, size = 20, stroke = 1.9 }: { name: IconName; size?: number
     group: <><path d="M16 19v-1.5a4.5 4.5 0 0 0-4.5-4.5h-3A4.5 4.5 0 0 0 4 17.5V19"/><circle cx="10" cy="7" r="3"/><path d="M17 11a3 3 0 0 1 3 3v2M16 4.5a3 3 0 0 1 0 5"/></>,
     heart: <path d="M20.8 5.8a5.4 5.4 0 0 0-7.7 0L12 6.9l-1.1-1.1a5.4 5.4 0 0 0-7.7 7.7L12 22l8.8-8.5a5.4 5.4 0 0 0 0-7.7Z"/>,
     home: <><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10M9 20v-6h6v6"/></>,
+    lock: <><rect x="4" y="10" width="16" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></>,
     location: <><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></>,
+    mail: <><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m4 7 8 6 8-6"/></>,
     plus: <path d="M12 5v14M5 12h14"/>,
     search: <><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></>,
     settings: <><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 5v4M8 15v4"/></>,
@@ -249,7 +257,169 @@ function statusLabel(status: MeetingStatus) {
   }[status];
 }
 
-function App() {
+type AuthMode = 'login' | 'register';
+
+function AuthScreen({
+  mode,
+  onModeChange,
+  onAuthenticated,
+}: {
+  mode: AuthMode;
+  onModeChange: (mode: AuthMode) => void;
+  onAuthenticated: () => void;
+}) {
+  const [error, setError] = useState('');
+  const isLogin = mode === 'login';
+
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError('');
+    const form = new FormData(event.currentTarget);
+    if (!isLogin && form.get('password') !== form.get('confirmPassword')) {
+      setError('Passwords do not match.');
+      return;
+    }
+    onAuthenticated();
+  };
+
+  const switchMode = (nextMode: AuthMode) => {
+    setError('');
+    onModeChange(nextMode);
+  };
+
+  return (
+    <main className="auth-shell">
+      <section className="auth-showcase">
+        <Group gap={10} className="auth-brand">
+          <div className="brand-mark"><Icon name="calendar" size={22} stroke={2.2} /></div>
+          <div className="brand">fit<span>the</span>meet<i>.</i></div>
+        </Group>
+
+        <Box className="auth-message">
+          <Text className="eyebrow">Make time together</Text>
+          <Title order={1}>One link.<br />One clear time.</Title>
+          <Text className="auth-lede">Skip the message maze. Share a poll, see everyone’s availability, and settle on the best slot.</Text>
+        </Box>
+
+        <Paper className="auth-preview-card" radius="lg">
+          <Group justify="space-between" align="flex-start" wrap="nowrap">
+            <Box>
+              <Badge className="auth-preview-badge">Product team</Badge>
+              <Title order={3} mt={12}>Q4 product direction</Title>
+              <Text c="dimmed" size="sm" mt={4}>Pick every time that works for you.</Text>
+            </Box>
+            <div className="response-stat"><strong>8/10</strong><span>responded</span></div>
+          </Group>
+          <Stack gap={9} mt={20}>
+            <div className="auth-time-row is-best"><span><strong>Mon, 26 Oct</strong><small>10:00–10:50</small></span><Badge>8 free</Badge></div>
+            <div className="auth-time-row"><span><strong>Tue, 27 Oct</strong><small>14:00–14:50</small></span><Badge color="gray">6 free</Badge></div>
+          </Stack>
+          <Group justify="space-between" mt={18}>
+            <Avatar.Group spacing="sm">
+              {['MK', 'AP', 'JT', 'LN'].map((person, index) => <Avatar key={person} color={['violet', 'pink', 'cyan', 'orange'][index]} size="sm">{person}</Avatar>)}
+            </Avatar.Group>
+            <Text size="sm" fw={800}>Almost there <span aria-hidden="true">→</span></Text>
+          </Group>
+        </Paper>
+
+        <Group className="auth-trust" gap={10} wrap="nowrap">
+          <ThemeIcon color="dark" radius="xl" size={34}><Icon name="check" size={17} /></ThemeIcon>
+          <Text size="sm"><strong>Designed for decisions,</strong><br />not calendar admin.</Text>
+        </Group>
+      </section>
+
+      <section className="auth-form-pane">
+        <Group gap={9} className="auth-mobile-brand">
+          <div className="brand-mark"><Icon name="calendar" size={20} stroke={2.2} /></div>
+          <div className="brand">fit<span>the</span>meet<i>.</i></div>
+        </Group>
+
+        <Paper className="auth-card" radius="xl">
+          <Text className="eyebrow">{isLogin ? 'Welcome back' : 'Create your workspace'}</Text>
+          <Title order={2} mt={5}>{isLogin ? 'Sign in to your meetings.' : 'Start finding better times.'}</Title>
+          <Text c="dimmed" mt={9} size="sm">
+            {isLogin ? 'Your polls, groups, and decisions are waiting.' : 'Set up your account in under a minute.'}
+          </Text>
+
+          <form key={mode} onSubmit={submit} className="auth-form">
+            <Stack gap="md">
+              {!isLogin && (
+                <TextInput
+                  name="name"
+                  label="Full name"
+                  placeholder="Alex Morgan"
+                  leftSection={<Icon name="user" size={18} />}
+                  required
+                  autoComplete="name"
+                />
+              )}
+              <TextInput
+                name="email"
+                type="email"
+                label="Email address"
+                placeholder="you@company.com"
+                leftSection={<Icon name="mail" size={18} />}
+                required
+                autoComplete="email"
+              />
+              <PasswordInput
+                name="password"
+                label="Password"
+                placeholder={isLogin ? 'Your password' : 'At least 8 characters'}
+                leftSection={<Icon name="lock" size={18} />}
+                required
+                minLength={8}
+                autoComplete={isLogin ? 'current-password' : 'new-password'}
+              />
+              {!isLogin && (
+                <PasswordInput
+                  name="confirmPassword"
+                  label="Confirm password"
+                  placeholder="Repeat your password"
+                  leftSection={<Icon name="lock" size={18} />}
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
+                />
+              )}
+
+              {isLogin ? (
+                <Group justify="space-between" gap="sm">
+                  <Checkbox label="Keep me signed in" size="sm" />
+                  <Anchor component="button" type="button" size="sm" fw={750} c="violet">Forgot password?</Anchor>
+                </Group>
+              ) : (
+                <Checkbox
+                  required
+                  label={<Text size="sm">I agree to the <Anchor href="#" c="violet">Terms</Anchor> and <Anchor href="#" c="violet">Privacy Policy</Anchor>.</Text>}
+                />
+              )}
+
+              {error && <Text className="error-notice" role="alert">{error}</Text>}
+              <Button type="submit" className="auth-submit" size="lg">
+                {isLogin ? 'Sign in' : 'Create account'}
+              </Button>
+            </Stack>
+          </form>
+
+          <Divider label="or" labelPosition="center" my="xl" />
+          <Button fullWidth variant="outline" color="dark" className="demo-button" onClick={onAuthenticated}>
+            Explore the demo workspace
+          </Button>
+
+          <Text ta="center" size="sm" c="dimmed" mt="xl">
+            {isLogin ? 'New to Fit the Meet?' : 'Already have an account?'}{' '}
+            <Anchor component="button" type="button" fw={850} c="dark" onClick={() => switchMode(isLogin ? 'register' : 'login')}>
+              {isLogin ? 'Create an account' : 'Sign in'}
+            </Anchor>
+          </Text>
+        </Paper>
+      </section>
+    </main>
+  );
+}
+
+function Dashboard({ onLogout }: { onLogout: () => void }) {
   const [meetings, setMeetings] = useState(initialMeetings);
   const [query, setQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
@@ -416,7 +586,17 @@ function App() {
 
         <Group gap={10} wrap="nowrap">
           <Button className="create-button" leftSection={<Icon name="plus" size={19} />} onClick={createModal.open}>New meeting</Button>
-          <Avatar color="dark" radius="xl">AK</Avatar>
+          <Menu position="bottom-end" shadow="md" width={210}>
+            <Menu.Target>
+              <UnstyledButton className="avatar-button" aria-label="Open account menu">
+                <Avatar color="dark" radius="xl">AK</Avatar>
+              </UnstyledButton>
+            </Menu.Target>
+            <Menu.Dropdown>
+              <Menu.Label>Signed in as Alex</Menu.Label>
+              <Menu.Item leftSection={<Icon name="user" size={17} />} onClick={onLogout}>Sign out</Menu.Item>
+            </Menu.Dropdown>
+          </Menu>
         </Group>
       </header>
 
@@ -599,6 +779,23 @@ function App() {
       </Modal>
     </Box>
   );
+}
+
+function App() {
+  const [authMode, setAuthMode] = useState<AuthMode>('login');
+  const [authenticated, setAuthenticated] = useState(false);
+
+  if (!authenticated) {
+    return (
+      <AuthScreen
+        mode={authMode}
+        onModeChange={setAuthMode}
+        onAuthenticated={() => setAuthenticated(true)}
+      />
+    );
+  }
+
+  return <Dashboard onLogout={() => setAuthenticated(false)} />;
 }
 
 export default App;

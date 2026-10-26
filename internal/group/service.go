@@ -24,6 +24,7 @@ type groupRepository interface {
 	SaveInviteCode(ctx context.Context, groupID int, code string, expiresAt time.Time) error
 	AddMember(ctx context.Context, groupID, userID int) error
 	FindGroupIDByInviteCode(ctx context.Context, code string) (int, error)
+	GetGroupNamesForUser(ctx context.Context, userID int) ([]string, error)
 }
 
 type Service struct {
@@ -86,4 +87,8 @@ func (gs *Service) Join(ctx context.Context, userID int, code string) error {
 		return err
 	}
 	return gs.groupRepository.AddMember(ctx, groupID, userID)
+}
+
+func (gs *Service) GetGroupNamesForUser(ctx context.Context, userID int) ([]string, error) {
+	return gs.groupRepository.GetGroupNamesForUser(ctx, userID)
 }

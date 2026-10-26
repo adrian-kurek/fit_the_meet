@@ -18,6 +18,10 @@ type pollService interface {
 	Create(ctx context.Context, userID int, poll Input) error
 	SubmitAnswers(ctx context.Context, userID, pollID int, answers SubmitAnswers) error
 	ToggleActive(ctx context.Context, userID, pollID int) error
+	Get(ctx context.Context, userID int) ([]Info, error)
+	GetByID(ctx context.Context, userID, pollID int) ([]Info, error)
+	DeleteAnswers(ctx context.Context, userID, pollID int) error
+	Delete(ctx context.Context, userID, pollID int) error
 }
 
 const timeout = 5 * time.Second
@@ -31,7 +35,11 @@ type Handler struct {
 	logger                   commoninterfaces.Logger
 }
 
-func NewHandler(pollService pollService, authenticationMiddleware authenticationMiddleware, logger commoninterfaces.Logger) *Handler {
+func NewHandler(
+	pollService pollService,
+	authenticationMiddleware authenticationMiddleware,
+	logger commoninterfaces.Logger,
+) *Handler {
 	return &Handler{
 		pollService:              pollService,
 		authenticationMiddleware: authenticationMiddleware,
@@ -138,6 +146,121 @@ func (ph *Handler) ToggleActive(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	err = ph.pollService.ToggleActive(ctx, userID, pollID)
+	if err != nil {
+		return ph.handleTimeout(err, r.URL.Path)
+	}
+
+	response.Send(w, http.StatusNoContent, nil)
+
+	return nil
+}
+
+func (ph *Handler) Get(w http.ResponseWriter, r *http.Request) error {
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	defer cancel()
+
+	r, err := ph.authenticationMiddleware.VerifyToken(r)
+	if err != nil {
+		return ph.handleTimeout(err, r.URL.Path)
+	}
+
+	userID, err := request.ReadUserIDFromToken(r)
+	if err != nil {
+		return err
+	}
+
+	polls, err := ph.pollService.Get(ctx, userID)
+	if err != nil {
+		return ph.handleTimeout(err, r.URL.Path)
+	}
+
+	response.Send(w, http.StatusOK, map[string]any{
+		"polls": polls,
+	})
+
+	return nil
+}
+
+func (ph *Handler) GetByID(w http.ResponseWriter, r *http.Request) error {
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	defer cancel()
+
+	r, err := ph.authenticationMiddleware.VerifyToken(r)
+	if err != nil {
+		return ph.handleTimeout(err, r.URL.Path)
+	}
+
+	userID, err := request.ReadUserIDFromToken(r)
+	if err != nil {
+		return err
+	}
+
+	pollID, err := strconv.Atoi(r.PathValue("pollID"))
+	if err != nil || pollID <= 0 {
+		return commonerrors.Validation("invalid poll ID")
+	}
+
+	poll, err := ph.pollService.GetByID(ctx, userID, pollID)
+	if err != nil {
+		return ph.handleTimeout(err, r.URL.Path)
+	}
+
+	response.Send(w, http.StatusOK, map[string]any{
+		"poll": poll,
+	})
+
+	return nil
+}
+
+func (ph *Handler) Delete(w http.ResponseWriter, r *http.Request) error {
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	defer cancel()
+
+	r, err := ph.authenticationMiddleware.VerifyToken(r)
+	if err != nil {
+		return ph.handleTimeout(err, r.URL.Path)
+	}
+
+	userID, err := request.ReadUserIDFromToken(r)
+	if err != nil {
+		return err
+	}
+
+	pollID, err := strconv.Atoi(r.PathValue("pollID"))
+	if err != nil || pollID <= 0 {
+		return commonerrors.Validation("invalid poll ID")
+	}
+
+	err = ph.pollService.Delete(ctx, userID, pollID)
+	if err != nil {
+		return ph.handleTimeout(err, r.URL.Path)
+	}
+
+	response.Send(w, http.StatusNoContent, nil)
+
+	return nil
+}
+
+func (ph *Handler) DeleteAnswers(w http.ResponseWriter, r *http.Request) error {
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	defer cancel()
+
+	r, err := ph.authenticationMiddleware.VerifyToken(r)
+	if err != nil {
+		return ph.handleTimeout(err, r.URL.Path)
+	}
+
+	userID, err := request.ReadUserIDFromToken(r)
+	if err != nil {
+		return err
+	}
+
+	pollID, err := strconv.Atoi(r.PathValue("pollID"))
+	if err != nil || pollID <= 0 {
+		return commonerrors.Validation("invalid poll ID")
+	}
+
+	err = ph.pollService.DeleteAnswers(ctx, userID, pollID)
 	if err != nil {
 		return ph.handleTimeout(err, r.URL.Path)
 	}

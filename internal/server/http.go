@@ -30,6 +30,10 @@ type pollHandler interface {
 	Create(w http.ResponseWriter, r *http.Request) error
 	SubmitAnswers(w http.ResponseWriter, r *http.Request) error
 	ToggleActive(w http.ResponseWriter, r *http.Request) error
+	Get(w http.ResponseWriter, r *http.Request) error
+	GetByID(w http.ResponseWriter, r *http.Request) error
+	DeleteAnswers(w http.ResponseWriter, r *http.Request) error
+	Delete(w http.ResponseWriter, r *http.Request) error
 }
 
 type authHandler interface {

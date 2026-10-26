@@ -30,7 +30,10 @@ func NewRoutes(eventHandler eventHandler, logger commoninterfaces.Logger) *Route
 func (er *Routes) Setup(router *http.ServeMux) {
 	prefix := "/events"
 
-	router.Handle(fmt.Sprintf("POST /groups/{groupID}%s/", prefix), request.Make(er.eventHandler.CreateForGroup, er.logger))
+	router.Handle(
+		fmt.Sprintf("POST /groups/{groupID}%s/", prefix),
+		request.Make(er.eventHandler.CreateForGroup, er.logger),
+	)
 	router.Handle(fmt.Sprintf("POST %s/", prefix), request.Make(er.eventHandler.Create, er.logger))
 	router.Handle(fmt.Sprintf("PATCH %s/{eventID}", prefix), request.Make(er.eventHandler.ToggleActive, er.logger))
 	router.Handle(fmt.Sprintf("PUT %s/{eventID}", prefix), request.Make(er.eventHandler.AddTimeBlocks, er.logger))

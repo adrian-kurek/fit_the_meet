@@ -346,7 +346,6 @@ func (gr *Repository) GetGroupNamesForUser(ctx context.Context, userID int) ([]s
 		var name string
 		err = rows.Scan(&name)
 		if err != nil {
-
 			gr.logger.Error(commonerrors.FailedToScanRow, "data", map[string]any{
 				queryMsg: query,
 				errorMsg: err.Error(),
@@ -405,7 +404,6 @@ func (gr *Repository) GetEventsForTheGroup(ctx context.Context, groupID, userID 
 		var name string
 		err = rows.Scan(&name)
 		if err != nil {
-
 			gr.logger.Error(commonerrors.FailedToScanRow, "data", map[string]any{
 				queryMsg: query,
 				errorMsg: err.Error(),

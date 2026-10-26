@@ -3,6 +3,7 @@ package poll
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -16,6 +17,7 @@ const (
 	errorMsg  = "error"
 	argsMsg   = "args"
 	userIDMsg = "userID"
+	pollIDMsg = "pollID"
 )
 
 type Repository struct {
@@ -36,7 +38,7 @@ func (pr *Repository) Create(ctx context.Context, userID int, code string, poll 
 		return err
 	}
 	defer func() {
-		if rollbackErr := tx.Rollback(); rollbackErr != nil && rollbackErr != sql.ErrTxDone {
+		if rollbackErr := tx.Rollback(); rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
 			pr.logger.Error("failed to roll back poll creation", "err", rollbackErr)
 		}
 	}()
@@ -241,6 +243,165 @@ func (pr *Repository) ToggleActive(ctx context.Context, pollID, userID int) erro
 			argsMsg: map[string]any{
 				"pollID":  pollID,
 				userIDMsg: userID,
+			},
+			errorMsg: err,
+		})
+		return err
+	}
+
+	return nil
+}
+
+func (pr *Repository) Get(ctx context.Context, userID int) ([]Info, error) {
+	const query = `
+	SELECT p.id,e.name,e.description,e.duration_minutes,e.code,e.IsActive, COUNT(po.poll_id) 
+	FROM polls p 
+	INNER JOIN poll_options po ON po.poll_id = p.id
+	INNER JOIN poll_answers pa ON pa.poll_option_id = po.id
+	INNER JOIN events e ON e.id = p.event_id
+	WHERE p.created_by = $1`
+
+	stmt, err := pr.db.PrepareContext(ctx, query)
+	if err != nil {
+		pr.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
+			queryMsg: query,
+			errorMsg: err.Error(),
+		})
+		return nil, err
+	}
+	defer func() {
+		if closeErr := stmt.Close(); closeErr != nil {
+			pr.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
+		}
+	}()
+
+	var polls []Info
+
+	rows, err := stmt.QueryContext(ctx, userID)
+	if err != nil {
+		pr.logger.Error(commonerrors.FailedToExecuteUpdateQuery, "data", map[string]any{
+			queryMsg: query,
+			argsMsg: map[string]any{
+				userIDMsg: userID,
+			},
+			errorMsg: err,
+		})
+		return nil, err
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			pr.logger.Error(commonerrors.FailedToCloseStatement, closeErr)
+		}
+	}()
+
+	found := false
+	for rows.Next() {
+		found = true
+		var poll Info
+		err = rows.Scan(
+			&poll.ID,
+			&poll.Name,
+			&poll.Description,
+			&poll.DurationMinutes,
+			&poll.Code,
+			&poll.IsActive,
+			&poll.OptionCount,
+			&poll.ResponseCount,
+			&poll.CreatedAt,
+		)
+		if err != nil {
+			pr.logger.Error(commonerrors.FailedToScanRow, map[string]any{
+				queryMsg: query,
+				argsMsg: map[string]any{
+					userIDMsg: userID,
+				},
+				errorMsg: err,
+			})
+			return nil, err
+		}
+		polls = append(polls, poll)
+	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		pr.logger.Error(commonerrors.FailedToScanRows, map[string]any{
+			queryMsg: query,
+			argsMsg: map[string]any{
+				userIDMsg: userID,
+			},
+			errorMsg: rowsErr.Error(),
+		})
+		return nil, rowsErr
+	}
+
+	if !found {
+		return nil, commonerrors.NotFound("")
+	}
+
+	return polls, nil
+}
+
+func (pr *Repository) Delete(ctx context.Context, userID, pollID int) error {
+	const query = "DELETE FROM polls WHERE id=$1 AND created_by = $2"
+
+	stmt, err := pr.db.PrepareContext(ctx, query)
+	if err != nil {
+		pr.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
+			queryMsg: query,
+			errorMsg: err.Error(),
+		})
+		return err
+	}
+	defer func() {
+		if closeErr := stmt.Close(); closeErr != nil {
+			pr.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
+		}
+	}()
+
+	_, err = stmt.ExecContext(ctx, pollID, userID)
+	if err != nil {
+		pr.logger.Error(commonerrors.FailedToExecuteDeleteQuery, "data", map[string]any{
+			queryMsg: query,
+			argsMsg: map[string]any{
+				userIDMsg: userID,
+				pollIDMsg: pollID,
+			},
+			errorMsg: err,
+		})
+		return err
+	}
+
+	return nil
+}
+
+func (pr *Repository) DeleteAnswers(ctx context.Context, userID, pollID int) error {
+	const query = `DELETE FROM poll_answers pa
+	USING polls p
+	USING poll_options po
+	WHERE p.id=$1
+		AND pa.user_id = $2
+		AND p.id = po.poll_id
+		AND po.id = pa.poll_option_id`
+
+	stmt, err := pr.db.PrepareContext(ctx, query)
+	if err != nil {
+		pr.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
+			queryMsg: query,
+			errorMsg: err.Error(),
+		})
+		return err
+	}
+	defer func() {
+		if closeErr := stmt.Close(); closeErr != nil {
+			pr.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
+		}
+	}()
+
+	_, err = stmt.ExecContext(ctx, pollID, userID)
+	if err != nil {
+		pr.logger.Error(commonerrors.FailedToExecuteDeleteQuery, "data", map[string]any{
+			queryMsg: query,
+			argsMsg: map[string]any{
+				userIDMsg: userID,
+				pollIDMsg: pollID,
 			},
 			errorMsg: err,
 		})

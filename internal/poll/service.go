@@ -11,6 +11,9 @@ type pollRepository interface {
 	Create(ctx context.Context, userID int, code string, poll Input) error
 	InsertAnswers(ctx context.Context, pollID, userID int, answers []Answer) error
 	ToggleActive(ctx context.Context, pollID, userID int) error
+	Get(ctx context.Context, userID int) ([]Info, error)
+	Delete(ctx context.Context, userID, pollID int) error
+	DeleteAnswers(ctx context.Context, userID, pollID int) error
 }
 
 type Service struct {
@@ -36,4 +39,16 @@ func (ps *Service) SubmitAnswers(ctx context.Context, userID, pollID int, answer
 
 func (ps *Service) ToggleActive(ctx context.Context, userID, pollID int) error {
 	return ps.pollRepository.ToggleActive(ctx, userID, pollID)
+}
+
+func (ps *Service) Get(ctx context.Context, userID int) ([]Info, error) {
+	return ps.pollRepository.Get(ctx, userID)
+}
+
+func (ps *Service) Delete(ctx context.Context, userID, pollID int) error {
+	return ps.pollRepository.Delete(ctx, userID, pollID)
+}
+
+func (ps *Service) DeleteAnswers(ctx context.Context, userID, pollID int) error {
+	return ps.pollRepository.DeleteAnswers(ctx, userID, pollID)
 }

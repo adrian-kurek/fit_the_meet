@@ -3,13 +3,9 @@ package poll
 import (
 	"context"
 	"database/sql"
-	"errors"
-	"fmt"
-	"strings"
 
 	commonerrors "github.com/adrian-kurek/fit_the_meet/common/errors"
 	commoninterfaces "github.com/adrian-kurek/fit_the_meet/common/interfaces"
-	"github.com/lib/pq"
 )
 
 const (
@@ -18,6 +14,9 @@ const (
 	argsMsg   = "args"
 	userIDMsg = "userID"
 	pollIDMsg = "pollID"
+
+	optionArgumentCount = 3
+	percentageFactor    = 100
 )
 
 type Repository struct {
@@ -26,485 +25,99 @@ type Repository struct {
 }
 
 func NewRepository(db *sql.DB, logger commoninterfaces.Logger) *Repository {
-	return &Repository{
-		db:     db,
-		logger: logger,
-	}
+	return &Repository{db: db, logger: logger}
 }
 
-func (pr *Repository) Create(ctx context.Context, userID int, code string, poll Input) error {
-	tx, err := pr.db.BeginTx(ctx, nil)
+func (pr *Repository) ToggleActive(ctx context.Context, pollID, userID int) error {
+	const query = `UPDATE polls
+	SET is_active = NOT is_active
+	WHERE id = $1 AND created_by = $2`
+
+	result, err := pr.db.ExecContext(ctx, query, pollID, userID)
 	if err != nil {
-		return err
-	}
-	defer func() {
-		if rollbackErr := tx.Rollback(); rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
-			pr.logger.Error("failed to roll back poll creation", "err", rollbackErr)
-		}
-	}()
-
-	eventID, err := pr.insertEvent(ctx, tx, userID, code, poll)
-	if err != nil {
-		return err
-	}
-
-	pollID, err := pr.insertPoll(ctx, tx, userID, eventID)
-	if err != nil {
-		return err
-	}
-
-	if err = pr.insertOptions(ctx, tx, pollID, poll.Options); err != nil {
-		return err
-	}
-
-	return tx.Commit()
-}
-
-func (pr *Repository) insertEvent(
-	ctx context.Context,
-	tx *sql.Tx,
-	userID int,
-	code string,
-	poll Input,
-) (int, error) {
-	const query = `INSERT INTO events(name, description, duration_minutes, code, created_by)
-		VALUES($1, $2, $3, $4, $5)
-		RETURNING id`
-
-	var eventID int
-	err := tx.QueryRowContext(
-		ctx,
-		query,
-		poll.Name,
-		poll.Description,
-		poll.DurationMinutes,
-		code,
-		userID,
-	).Scan(&eventID)
-	if err != nil {
-		pr.logger.Error(commonerrors.FailedToExecuteInsertQuery, "data", map[string]any{
-			queryMsg: query,
-			errorMsg: err,
-		})
-		return 0, err
-	}
-
-	return eventID, nil
-}
-
-func (pr *Repository) insertPoll(ctx context.Context, tx *sql.Tx, userID, eventID int) (int, error) {
-	const query = `INSERT INTO polls(event_id, created_by)
-		VALUES($1, $2)
-		RETURNING id`
-
-	var pollID int
-	err := tx.QueryRowContext(ctx, query, eventID, userID).Scan(&pollID)
-	if err != nil {
-		pr.logger.Error(commonerrors.FailedToExecuteInsertQuery, "data", map[string]any{
-			queryMsg: query,
-			errorMsg: err,
-		})
-		return 0, err
-	}
-
-	return pollID, nil
-}
-
-func (pr *Repository) insertOptions(ctx context.Context, tx *sql.Tx, pollID int, options []Option) error {
-	if len(options) == 0 {
-		return commonerrors.Validation("at least one poll option is required")
-	}
-
-	args := make([]any, 0, len(options)*3)
-	placeholders := make([]string, 0, len(options))
-	for i, option := range options {
-		argumentStart := i * 3
-		args = append(args, pollID, option.StartTime, option.EndTime)
-		placeholders = append(placeholders, fmt.Sprintf(
-			"($%d, $%d, $%d)",
-			argumentStart+1,
-			argumentStart+2,
-			argumentStart+3,
-		))
-	}
-
-	query := fmt.Sprintf(
-		"INSERT INTO poll_options(poll_id, start_time, end_time) VALUES %s",
-		strings.Join(placeholders, ","),
-	)
-	_, err := tx.ExecContext(ctx, query, args...)
-	if err != nil {
-		pr.logger.Error(commonerrors.FailedToExecuteInsertQuery, "data", map[string]any{
-			queryMsg: query,
-			errorMsg: err,
-		})
-		return err
-	}
-
-	return nil
-}
-
-func (pr *Repository) InsertAnswers(ctx context.Context, pollID, userID int, answers []Answer) error {
-	if len(answers) == 0 {
-		return commonerrors.Validation("at least one poll answer is required")
-	}
-
-	optionIDs := make([]int, 0, len(answers))
-	for _, answer := range answers {
-		if answer.OptionID <= 0 {
-			return commonerrors.Validation("poll option IDs must be positive")
-		}
-		optionIDs = append(optionIDs, answer.OptionID)
-	}
-
-	const query = `WITH requested_options (option_id) AS (
-		SELECT DISTINCT unnest($3::int[])
-	),
-	valid_options AS (
-		SELECT po.id
-		FROM requested_options requested
-		JOIN poll_options po ON po.id = requested.option_id
-		JOIN polls p ON p.id = po.poll_id
-		WHERE p.id = $1
-			AND p.is_active = TRUE
-	),
-	answers_to_insert AS (
-		SELECT valid.id AS poll_option_id, $2::int AS user_id
-		FROM valid_options valid
-		WHERE (SELECT COUNT(*) FROM valid_options) =
-			(SELECT COUNT(*) FROM requested_options)
-	)
-	INSERT INTO poll_answers (poll_option_id, user_id)
-	SELECT poll_option_id, user_id
-	FROM answers_to_insert
-	ON CONFLICT (poll_option_id, user_id)
-	DO UPDATE SET is_active = TRUE`
-
-	stmt, err := pr.db.PrepareContext(ctx, query)
-	if err != nil {
-		pr.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
-			queryMsg: query,
-			errorMsg: err.Error(),
-		})
-		return err
-	}
-	defer func() {
-		if closeErr := stmt.Close(); closeErr != nil {
-			pr.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
-		}
-	}()
-
-	result, err := stmt.ExecContext(ctx, pollID, userID, pq.Array(optionIDs))
-	if err != nil {
-		pr.logger.Error(commonerrors.FailedToExecuteInsertQuery, "data", map[string]any{
+		pr.logger.Error(commonerrors.FailedToExecuteUpdateQuery, "data", map[string]any{
 			queryMsg: query,
 			argsMsg: map[string]any{
-				"pollID":    pollID,
-				userIDMsg:   userID,
-				"optionIDs": optionIDs,
+				pollIDMsg: pollID,
+				userIDMsg: userID,
 			},
 			errorMsg: err,
 		})
 		return err
 	}
 
+	return requireAffectedRow(result, "owned poll not found")
+}
+
+func (pr *Repository) Delete(ctx context.Context, userID, pollID int) error {
+	const query = `DELETE FROM events e
+	USING polls p
+	WHERE p.id = $1
+		AND p.created_by = $2
+		AND e.id = p.event_id`
+
+	result, err := pr.db.ExecContext(ctx, query, pollID, userID)
+	if err != nil {
+		pr.logger.Error(commonerrors.FailedToExecuteDeleteQuery, "data", map[string]any{
+			queryMsg: query,
+			errorMsg: err,
+		})
+		return err
+	}
+
+	return requireAffectedRow(result, "owned poll not found")
+}
+
+func (pr *Repository) DeleteAnswers(ctx context.Context, userID, pollID int) error {
+	const query = `WITH accessible_poll AS (
+		SELECT p.id
+		FROM polls p
+		JOIN events e ON e.id = p.event_id
+		WHERE p.id = $1
+			AND (
+				e.group_id IS NULL
+				OR p.created_by = $2
+				OR EXISTS (
+					SELECT 1
+					FROM group_participants gp
+					WHERE gp.group_id = e.group_id AND gp.user_id = $2
+				)
+			)
+	),
+	deleted AS (
+		DELETE FROM poll_answers pa
+		USING poll_options po, accessible_poll p
+		WHERE pa.poll_option_id = po.id
+			AND po.poll_id = p.id
+			AND pa.user_id = $2
+		RETURNING pa.id
+	)
+	SELECT EXISTS(SELECT 1 FROM accessible_poll)`
+
+	var found bool
+	err := pr.db.QueryRowContext(ctx, query, pollID, userID).Scan(&found)
+	if err != nil {
+		pr.logger.Error(commonerrors.FailedToExecuteDeleteQuery, "data", map[string]any{
+			queryMsg: query,
+			errorMsg: err,
+		})
+		return err
+	}
+	if !found {
+		return commonerrors.NotFound("poll not found")
+	}
+
+	return nil
+}
+
+func requireAffectedRow(result sql.Result, message string) error {
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return err
 	}
 	if rowsAffected == 0 {
-		return commonerrors.NotFound("active poll or poll options not found")
+		return commonerrors.NotFound(message)
 	}
 
 	return nil
-}
-
-func (pr *Repository) ToggleActive(ctx context.Context, pollID, userID int) error {
-	const query = "UPDATE polls SET is_active = NOT  is_active WHERE created_by = $1 AND id = $2"
-
-	stmt, err := pr.db.PrepareContext(ctx, query)
-	if err != nil {
-		pr.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
-			queryMsg: query,
-			errorMsg: err.Error(),
-		})
-		return err
-	}
-	defer func() {
-		if closeErr := stmt.Close(); closeErr != nil {
-			pr.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
-		}
-	}()
-
-	_, err = stmt.ExecContext(ctx, userID, pollID)
-	if err != nil {
-		pr.logger.Error(commonerrors.FailedToExecuteUpdateQuery, "data", map[string]any{
-			queryMsg: query,
-			argsMsg: map[string]any{
-				"pollID":  pollID,
-				userIDMsg: userID,
-			},
-			errorMsg: err,
-		})
-		return err
-	}
-
-	return nil
-}
-
-func (pr *Repository) Get(ctx context.Context, userID int) ([]Info, error) {
-	const query = `
-	SELECT p.id,e.name,e.description,e.duration_minutes,e.code,e.IsActive, COUNT(po.poll_id) 
-	FROM polls p 
-	INNER JOIN poll_options po ON po.poll_id = p.id
-	INNER JOIN poll_answers pa ON pa.poll_option_id = po.id
-	INNER JOIN events e ON e.id = p.event_id
-	WHERE p.created_by = $1`
-
-	stmt, err := pr.db.PrepareContext(ctx, query)
-	if err != nil {
-		pr.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
-			queryMsg: query,
-			errorMsg: err.Error(),
-		})
-		return nil, err
-	}
-	defer func() {
-		if closeErr := stmt.Close(); closeErr != nil {
-			pr.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
-		}
-	}()
-
-	var polls []Info
-
-	rows, err := stmt.QueryContext(ctx, userID)
-	if err != nil {
-		pr.logger.Error(commonerrors.FailedToExecuteUpdateQuery, "data", map[string]any{
-			queryMsg: query,
-			argsMsg: map[string]any{
-				userIDMsg: userID,
-			},
-			errorMsg: err,
-		})
-		return nil, err
-	}
-	defer func() {
-		if closeErr := rows.Close(); closeErr != nil {
-			pr.logger.Error(commonerrors.FailedToCloseStatement, closeErr)
-		}
-	}()
-
-	found := false
-	for rows.Next() {
-		found = true
-		var poll Info
-		err = rows.Scan(
-			&poll.ID,
-			&poll.Name,
-			&poll.Description,
-			&poll.DurationMinutes,
-			&poll.Code,
-			&poll.IsActive,
-			&poll.OptionCount,
-			&poll.ResponseCount,
-			&poll.CreatedAt,
-		)
-		if err != nil {
-			pr.logger.Error(commonerrors.FailedToScanRow, map[string]any{
-				queryMsg: query,
-				argsMsg: map[string]any{
-					userIDMsg: userID,
-				},
-				errorMsg: err,
-			})
-			return nil, err
-		}
-		polls = append(polls, poll)
-	}
-	if rowsErr := rows.Err(); rowsErr != nil {
-		pr.logger.Error(commonerrors.FailedToScanRows, map[string]any{
-			queryMsg: query,
-			argsMsg: map[string]any{
-				userIDMsg: userID,
-			},
-			errorMsg: rowsErr.Error(),
-		})
-		return nil, rowsErr
-	}
-
-	if !found {
-		return nil, commonerrors.NotFound("")
-	}
-
-	return polls, nil
-}
-
-func (pr *Repository) Delete(ctx context.Context, userID, pollID int) error {
-	const query = "DELETE FROM polls WHERE id=$1 AND created_by = $2"
-
-	stmt, err := pr.db.PrepareContext(ctx, query)
-	if err != nil {
-		pr.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
-			queryMsg: query,
-			errorMsg: err.Error(),
-		})
-		return err
-	}
-	defer func() {
-		if closeErr := stmt.Close(); closeErr != nil {
-			pr.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
-		}
-	}()
-
-	_, err = stmt.ExecContext(ctx, pollID, userID)
-	if err != nil {
-		pr.logger.Error(commonerrors.FailedToExecuteDeleteQuery, "data", map[string]any{
-			queryMsg: query,
-			argsMsg: map[string]any{
-				userIDMsg: userID,
-				pollIDMsg: pollID,
-			},
-			errorMsg: err,
-		})
-		return err
-	}
-
-	return nil
-}
-
-func (pr *Repository) DeleteAnswers(ctx context.Context, userID, pollID int) error {
-	const query = `DELETE FROM poll_answers pa
-	USING polls p
-	USING poll_options po
-	WHERE p.id=$1
-		AND pa.user_id = $2
-		AND p.id = po.poll_id
-		AND po.id = pa.poll_option_id`
-
-	stmt, err := pr.db.PrepareContext(ctx, query)
-	if err != nil {
-		pr.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
-			queryMsg: query,
-			errorMsg: err.Error(),
-		})
-		return err
-	}
-	defer func() {
-		if closeErr := stmt.Close(); closeErr != nil {
-			pr.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
-		}
-	}()
-
-	_, err = stmt.ExecContext(ctx, pollID, userID)
-	if err != nil {
-		pr.logger.Error(commonerrors.FailedToExecuteDeleteQuery, "data", map[string]any{
-			queryMsg: query,
-			argsMsg: map[string]any{
-				userIDMsg: userID,
-				pollIDMsg: pollID,
-			},
-			errorMsg: err,
-		})
-		return err
-	}
-
-	return nil
-}
-
-func (pr *Repository) GetResults(ctx context.Context, userID, pollID int) ([]OptionResult, error) {
-	const query = `
-	SELECT 
-	po.id,
-	po.start_time,
-	po.end_time,
-	COUNT(*) as number_of_answers,
-	(
-		(
-			SELECT COUNT(*) FROM poll
-			INNER JOIN poll_options po ON po.poll_id = p.id
-			INNER JOIN poll_answers pa ON pa.poll_option_id = po.id
-			WHERE p.id = $1 AND (p.created_by = $2 OR pa.user_id = $2)
-		)
-		/ COUNT(*) as number_of_answers
-	) * 100 as Percentage
-	FROM polls p
-	INNER JOIN poll_options po ON po.poll_id = p.id
-	INNER JOIN poll_answers pa ON pa.poll_option_id = po.id
-	WHERE p.id = $1 AND (p.created_by = $2 OR pa.user_id = $2)
-	GROUP BY po.id
-	`
-
-	stmt, err := pr.db.PrepareContext(ctx, query)
-	if err != nil {
-		pr.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
-			queryMsg: query,
-			errorMsg: err.Error(),
-		})
-		return nil, err
-	}
-	defer func() {
-		if closeErr := stmt.Close(); closeErr != nil {
-			pr.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
-		}
-	}()
-
-	var pollOptionResults []OptionResult
-
-	rows, err := stmt.QueryContext(ctx, pollID, userID)
-	if err != nil {
-		pr.logger.Error(commonerrors.FailedToExecuteSelectQuery, "data", map[string]any{
-			queryMsg: query,
-			argsMsg: map[string]any{
-				userIDMsg: userID,
-				pollIDMsg: pollID,
-			},
-			errorMsg: err,
-		})
-		return nil, err
-	}
-	defer func() {
-		if closeErr := rows.Close(); closeErr != nil {
-			pr.logger.Error(commonerrors.FailedToCloseStatement, closeErr)
-		}
-	}()
-
-	found := false
-	for rows.Next() {
-		found = true
-		var pollOptionResult OptionResult
-		err = rows.Scan(
-			&pollOptionResult.ID,
-			&pollOptionResult.StartAt,
-			&pollOptionResult.EndAt,
-			&pollOptionResult.VoteCount,
-			&pollOptionResult.Percentage,
-		)
-		if err != nil {
-			pr.logger.Error(commonerrors.FailedToScanRow, map[string]any{
-				queryMsg: query,
-				argsMsg: map[string]any{
-					userIDMsg: userID,
-				},
-				errorMsg: err,
-			})
-			return nil, err
-		}
-		pollOptionResults = append(pollOptionResults, pollOptionResult)
-	}
-	if rowsErr := rows.Err(); rowsErr != nil {
-		pr.logger.Error(commonerrors.FailedToScanRows, map[string]any{
-			queryMsg: query,
-			argsMsg: map[string]any{
-				userIDMsg: userID,
-			},
-			errorMsg: rowsErr.Error(),
-		})
-		return nil, rowsErr
-	}
-
-	if !found {
-		return nil, commonerrors.NotFound("")
-	}
-
-	return pollOptionResults, nil
 }

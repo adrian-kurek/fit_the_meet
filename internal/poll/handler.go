@@ -16,10 +16,11 @@ import (
 
 type pollService interface {
 	Create(ctx context.Context, userID int, poll Input) error
+	CreateForGroup(ctx context.Context, userID, groupID int, poll Input) error
 	SubmitAnswers(ctx context.Context, userID, pollID int, answers SubmitAnswers) error
 	ToggleActive(ctx context.Context, userID, pollID int) error
 	Get(ctx context.Context, userID int) ([]Info, error)
-	GetByID(ctx context.Context, userID, pollID int) ([]Info, error)
+	GetByID(ctx context.Context, userID, pollID int) (Detail, error)
 	DeleteAnswers(ctx context.Context, userID, pollID int) error
 	Delete(ctx context.Context, userID, pollID int) error
 	GetResults(ctx context.Context, userID, pollID int) (Result, error)
@@ -56,16 +57,50 @@ func (ph *Handler) handleTimeout(err error, path string) error {
 	return err
 }
 
-func (ph *Handler) Create(w http.ResponseWriter, r *http.Request) error {
-	ctx, cancel := context.WithTimeout(r.Context(), timeout)
-	defer cancel()
-
+func (ph *Handler) authenticateAndGetUserID(r *http.Request) (int, error) {
 	r, err := ph.authenticationMiddleware.VerifyToken(r)
 	if err != nil {
-		return ph.handleTimeout(err, r.URL.Path)
+		return 0, ph.handleTimeout(err, r.URL.Path)
 	}
 
 	userID, err := request.ReadUserIDFromToken(r)
+	if err != nil {
+		return 0, err
+	}
+	return userID, nil
+}
+
+func (ph *Handler) authenticatePollRequest(r *http.Request) (int, int, error) {
+	userID, err := ph.authenticateAndGetUserID(r)
+	if err != nil {
+		return 0, 0, err
+	}
+	pollID, err := strconv.Atoi(r.PathValue("pollID"))
+	if err != nil || pollID <= 0 {
+		return 0, 0, commonerrors.Validation("invalid poll ID")
+	}
+
+	return userID, pollID, nil
+}
+
+func (ph *Handler) Create(w http.ResponseWriter, r *http.Request) error {
+	return ph.create(w, r, nil)
+}
+
+func (ph *Handler) CreateForGroup(w http.ResponseWriter, r *http.Request) error {
+	groupID, err := strconv.Atoi(r.PathValue("groupID"))
+	if err != nil || groupID <= 0 {
+		return commonerrors.Validation("invalid group ID")
+	}
+
+	return ph.create(w, r, &groupID)
+}
+
+func (ph *Handler) create(w http.ResponseWriter, r *http.Request, groupID *int) error {
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	defer cancel()
+
+	userID, err := ph.authenticateAndGetUserID(r)
 	if err != nil {
 		return err
 	}
@@ -79,8 +114,15 @@ func (ph *Handler) Create(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if err = reqData.Validate(); err != nil {
+		return err
+	}
 
-	err = ph.pollService.Create(ctx, userID, *reqData)
+	if groupID == nil {
+		err = ph.pollService.Create(ctx, userID, *reqData)
+	} else {
+		err = ph.pollService.CreateForGroup(ctx, userID, *groupID, *reqData)
+	}
 	if err != nil {
 		return ph.handleTimeout(err, r.URL.Path)
 	}
@@ -93,12 +135,7 @@ func (ph *Handler) SubmitAnswers(w http.ResponseWriter, r *http.Request) error {
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 
-	r, err := ph.authenticationMiddleware.VerifyToken(r)
-	if err != nil {
-		return ph.handleTimeout(err, r.URL.Path)
-	}
-
-	userID, err := request.ReadUserIDFromToken(r)
+	userID, err := ph.authenticateAndGetUserID(r)
 	if err != nil {
 		return err
 	}
@@ -131,12 +168,7 @@ func (ph *Handler) ToggleActive(w http.ResponseWriter, r *http.Request) error {
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 
-	r, err := ph.authenticationMiddleware.VerifyToken(r)
-	if err != nil {
-		return ph.handleTimeout(err, r.URL.Path)
-	}
-
-	userID, err := request.ReadUserIDFromToken(r)
+	userID, err := ph.authenticateAndGetUserID(r)
 	if err != nil {
 		return err
 	}
@@ -160,12 +192,7 @@ func (ph *Handler) Get(w http.ResponseWriter, r *http.Request) error {
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 
-	r, err := ph.authenticationMiddleware.VerifyToken(r)
-	if err != nil {
-		return ph.handleTimeout(err, r.URL.Path)
-	}
-
-	userID, err := request.ReadUserIDFromToken(r)
+	userID, err := ph.authenticateAndGetUserID(r)
 	if err != nil {
 		return err
 	}
@@ -186,19 +213,9 @@ func (ph *Handler) GetByID(w http.ResponseWriter, r *http.Request) error {
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 
-	r, err := ph.authenticationMiddleware.VerifyToken(r)
+	userID, pollID, err := ph.authenticatePollRequest(r)
 	if err != nil {
 		return ph.handleTimeout(err, r.URL.Path)
-	}
-
-	userID, err := request.ReadUserIDFromToken(r)
-	if err != nil {
-		return err
-	}
-
-	pollID, err := strconv.Atoi(r.PathValue("pollID"))
-	if err != nil || pollID <= 0 {
-		return commonerrors.Validation("invalid poll ID")
 	}
 
 	poll, err := ph.pollService.GetByID(ctx, userID, pollID)
@@ -217,12 +234,7 @@ func (ph *Handler) Delete(w http.ResponseWriter, r *http.Request) error {
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 
-	r, err := ph.authenticationMiddleware.VerifyToken(r)
-	if err != nil {
-		return ph.handleTimeout(err, r.URL.Path)
-	}
-
-	userID, err := request.ReadUserIDFromToken(r)
+	userID, err := ph.authenticateAndGetUserID(r)
 	if err != nil {
 		return err
 	}
@@ -246,12 +258,7 @@ func (ph *Handler) DeleteAnswers(w http.ResponseWriter, r *http.Request) error {
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 
-	r, err := ph.authenticationMiddleware.VerifyToken(r)
-	if err != nil {
-		return ph.handleTimeout(err, r.URL.Path)
-	}
-
-	userID, err := request.ReadUserIDFromToken(r)
+	userID, err := ph.authenticateAndGetUserID(r)
 	if err != nil {
 		return err
 	}
@@ -275,19 +282,9 @@ func (ph *Handler) GetResults(w http.ResponseWriter, r *http.Request) error {
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 
-	r, err := ph.authenticationMiddleware.VerifyToken(r)
+	userID, pollID, err := ph.authenticatePollRequest(r)
 	if err != nil {
 		return ph.handleTimeout(err, r.URL.Path)
-	}
-
-	userID, err := request.ReadUserIDFromToken(r)
-	if err != nil {
-		return err
-	}
-
-	pollID, err := strconv.Atoi(r.PathValue("pollID"))
-	if err != nil || pollID <= 0 {
-		return commonerrors.Validation("invalid poll ID")
 	}
 
 	res, err := ph.pollService.GetResults(ctx, userID, pollID)

@@ -9,12 +9,14 @@ import (
 
 type pollRepository interface {
 	Create(ctx context.Context, userID int, code string, poll Input) error
+	CreateForGroup(ctx context.Context, userID, groupID int, code string, poll Input) error
 	InsertAnswers(ctx context.Context, pollID, userID int, answers []Answer) error
 	ToggleActive(ctx context.Context, pollID, userID int) error
 	Get(ctx context.Context, userID int) ([]Info, error)
+	GetByID(ctx context.Context, userID, pollID int) (Detail, error)
 	Delete(ctx context.Context, userID, pollID int) error
 	DeleteAnswers(ctx context.Context, userID, pollID int) error
-	GetResults(ctx context.Context, userID, pollID int) ([]OptionResult, error)
+	GetResults(ctx context.Context, userID, pollID int) (Result, error)
 }
 
 type Service struct {
@@ -34,6 +36,11 @@ func (ps *Service) Create(ctx context.Context, userID int, poll Input) error {
 	return ps.pollRepository.Create(ctx, userID, code, poll)
 }
 
+func (ps *Service) CreateForGroup(ctx context.Context, userID, groupID int, poll Input) error {
+	code := uuid.New().String()
+	return ps.pollRepository.CreateForGroup(ctx, userID, groupID, code, poll)
+}
+
 func (ps *Service) SubmitAnswers(ctx context.Context, userID, pollID int, answers SubmitAnswers) error {
 	return ps.pollRepository.InsertAnswers(ctx, pollID, userID, answers.Answers)
 }
@@ -44,6 +51,10 @@ func (ps *Service) ToggleActive(ctx context.Context, userID, pollID int) error {
 
 func (ps *Service) Get(ctx context.Context, userID int) ([]Info, error) {
 	return ps.pollRepository.Get(ctx, userID)
+}
+
+func (ps *Service) GetByID(ctx context.Context, userID, pollID int) (Detail, error) {
+	return ps.pollRepository.GetByID(ctx, userID, pollID)
 }
 
 func (ps *Service) Delete(ctx context.Context, userID, pollID int) error {

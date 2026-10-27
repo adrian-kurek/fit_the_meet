@@ -10,6 +10,7 @@ import (
 	"github.com/adrian-kurek/fit_the_meet/internal/auth"
 	"github.com/adrian-kurek/fit_the_meet/internal/event"
 	"github.com/adrian-kurek/fit_the_meet/internal/group"
+	"github.com/adrian-kurek/fit_the_meet/internal/poll"
 )
 
 const (
@@ -23,6 +24,18 @@ type eventHandler interface {
 	CreateForGroup(w http.ResponseWriter, r *http.Request) error
 	ToggleActive(w http.ResponseWriter, r *http.Request) error
 	AddTimeBlocks(w http.ResponseWriter, r *http.Request) error
+}
+
+type pollHandler interface {
+	Create(w http.ResponseWriter, r *http.Request) error
+	CreateForGroup(w http.ResponseWriter, r *http.Request) error
+	SubmitAnswers(w http.ResponseWriter, r *http.Request) error
+	ToggleActive(w http.ResponseWriter, r *http.Request) error
+	Get(w http.ResponseWriter, r *http.Request) error
+	GetByID(w http.ResponseWriter, r *http.Request) error
+	DeleteAnswers(w http.ResponseWriter, r *http.Request) error
+	Delete(w http.ResponseWriter, r *http.Request) error
+	GetResults(w http.ResponseWriter, r *http.Request) error
 }
 
 type authHandler interface {
@@ -49,6 +62,7 @@ type DependencyConfig struct {
 	authHandler  authHandler
 	groupHandler groupHandler
 	eventHandler eventHandler
+	pollHandler  pollHandler
 }
 
 func NewDependencyConfig(
@@ -57,6 +71,7 @@ func NewDependencyConfig(
 	authHandler authHandler,
 	groupHandler groupHandler,
 	eventHandler eventHandler,
+	pollHandler pollHandler,
 ) *DependencyConfig {
 	return &DependencyConfig{
 		port:         port,
@@ -64,6 +79,7 @@ func NewDependencyConfig(
 		authHandler:  authHandler,
 		groupHandler: groupHandler,
 		eventHandler: eventHandler,
+		pollHandler:  pollHandler,
 	}
 }
 
@@ -99,6 +115,8 @@ func (h *HTTP) SetupRoutes() {
 	groupRoute.Setup(h.router)
 	eventRoute := event.NewRoutes(h.config.eventHandler, h.config.logger)
 	eventRoute.Setup(h.router)
+	pollRoute := poll.NewRoutes(h.config.pollHandler, h.config.logger)
+	pollRoute.Setup(h.router)
 }
 
 func (h *HTTP) Shutdown(ctx context.Context) error {

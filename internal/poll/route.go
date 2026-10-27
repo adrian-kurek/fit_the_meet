@@ -1,0 +1,67 @@
+package poll
+
+import (
+	"fmt"
+	"net/http"
+
+	commoninterfaces "github.com/adrian-kurek/fit_the_meet/common/interfaces"
+	"github.com/adrian-kurek/fit_the_meet/common/request"
+)
+
+type pollHandler interface {
+	Create(w http.ResponseWriter, r *http.Request) error
+	CreateForGroup(w http.ResponseWriter, r *http.Request) error
+	SubmitAnswers(w http.ResponseWriter, r *http.Request) error
+	ToggleActive(w http.ResponseWriter, r *http.Request) error
+	Get(w http.ResponseWriter, r *http.Request) error
+	GetByID(w http.ResponseWriter, r *http.Request) error
+	DeleteAnswers(w http.ResponseWriter, r *http.Request) error
+	Delete(w http.ResponseWriter, r *http.Request) error
+	GetResults(w http.ResponseWriter, r *http.Request) error
+}
+
+type Routes struct {
+	pollHandler pollHandler
+	logger      commoninterfaces.Logger
+}
+
+func NewRoutes(pollHandler pollHandler, logger commoninterfaces.Logger) *Routes {
+	return &Routes{
+		pollHandler: pollHandler,
+		logger:      logger,
+	}
+}
+
+func (pr *Routes) Setup(router *http.ServeMux) {
+	prefix := "/polls"
+
+	router.Handle(fmt.Sprintf("GET %s/", prefix), request.Make(pr.pollHandler.Get, pr.logger))
+	router.Handle(fmt.Sprintf("GET %s/{pollID}", prefix), request.Make(pr.pollHandler.GetByID, pr.logger))
+	router.Handle(
+		fmt.Sprintf("GET %s/{pollID}/results", prefix),
+		request.Make(pr.pollHandler.GetResults, pr.logger),
+	)
+	router.Handle(
+		fmt.Sprintf("DELETE %s/{pollID}/answers", prefix),
+		request.Make(pr.pollHandler.DeleteAnswers, pr.logger),
+	)
+	router.Handle(fmt.Sprintf("DELETE %s/{pollID}", prefix), request.Make(pr.pollHandler.Delete, pr.logger))
+	router.Handle(
+		fmt.Sprintf("POST /groups/{groupID}%s/", prefix),
+		request.Make(pr.pollHandler.CreateForGroup, pr.logger),
+	)
+	router.Handle(fmt.Sprintf("POST %s/", prefix), request.Make(pr.pollHandler.Create, pr.logger))
+	router.Handle(
+		fmt.Sprintf("POST %s/{pollID}/answers", prefix),
+		request.Make(pr.pollHandler.SubmitAnswers, pr.logger),
+	)
+	router.Handle(
+		fmt.Sprintf("PUT %s/{pollID}/answers", prefix),
+		request.Make(pr.pollHandler.SubmitAnswers, pr.logger),
+	)
+
+	router.Handle(
+		fmt.Sprintf("PATCH %s/{pollID}", prefix),
+		request.Make(pr.pollHandler.ToggleActive, pr.logger),
+	)
+}

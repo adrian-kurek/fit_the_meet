@@ -37,12 +37,30 @@ const (
 	endTimeArgumentOffset   = 5
 )
 
-func (er *Repository) Insert(ctx context.Context, userID int, code string, event Input) error {
+func (er *Repository) Insert(ctx context.Context, userID int, code string, event Input) (int, error) {
 	const query = `INSERT INTO events(name, description, duration_minutes, code, created_by)
-		VALUES($1, $2, $3, $4, $5)`
+		VALUES($1, $2, $3, $4, $5)
+		RETURNING id`
 
-	_, err := er.executeInsert(ctx, query, event, code, userID)
-	return err
+	var eventID int
+	err := er.db.QueryRowContext(
+		ctx,
+		query,
+		event.Name,
+		event.Description,
+		event.DurationMinutes,
+		code,
+		userID,
+	).Scan(&eventID)
+	if err != nil {
+		er.logger.Error(commonerrors.FailedToExecuteInsertQuery, "data", map[string]any{
+			queryMsg: query,
+			errorMsg: err,
+		})
+		return 0, err
+	}
+
+	return eventID, nil
 }
 
 func (er *Repository) InsertForGroup(ctx context.Context, userID, groupID int, code string, event Input) error {
@@ -94,46 +112,6 @@ func (er *Repository) InsertForGroup(ctx context.Context, userID, groupID int, c
 	}
 
 	return nil
-}
-
-func (er *Repository) executeInsert(
-	ctx context.Context,
-	query string,
-	event Input,
-	code string,
-	userID int,
-) (sql.Result, error) {
-	stmt, err := er.db.PrepareContext(ctx, query)
-	if err != nil {
-		er.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
-			queryMsg: query,
-			errorMsg: err.Error(),
-		})
-		return nil, err
-	}
-	defer func() {
-		if closeErr := stmt.Close(); closeErr != nil {
-			er.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
-		}
-	}()
-
-	result, err := stmt.ExecContext(ctx, event.Name, event.Description, event.DurationMinutes, code, userID)
-	if err != nil {
-		er.logger.Error(commonerrors.FailedToExecuteInsertQuery, "data", map[string]any{
-			queryMsg: query,
-			argsMsg: map[string]any{
-				userIDMsg:         userID,
-				codeMsg:           code,
-				"name":            event.Name,
-				"description":     event.Description,
-				"durationMinutes": event.DurationMinutes,
-			},
-			errorMsg: err,
-		})
-		return nil, err
-	}
-
-	return result, nil
 }
 
 func (er *Repository) ToggleActive(ctx context.Context, eventID, userID int) error {

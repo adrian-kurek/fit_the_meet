@@ -82,12 +82,30 @@ func (gs *Service) GenerateInviteCode(ctx context.Context, groupID, userID int) 
 	return code, nil
 }
 
-func (gs *Service) Join(ctx context.Context, userID int, code string) error {
+func (gs *Service) Join(ctx context.Context, userID int, code string) (Joined, error) {
 	groupID, err := gs.groupRepository.FindGroupIDByInviteCode(ctx, code)
 	if err != nil {
-		return err
+		if errors.Is(err, sql.ErrNoRows) {
+			return Joined{}, commonerrors.NotFound("activation code not found or expired")
+		}
+		return Joined{}, err
 	}
-	return gs.groupRepository.AddMember(ctx, groupID, userID)
+
+	if err = gs.groupRepository.AddMember(ctx, groupID, userID); err != nil {
+		return Joined{}, err
+	}
+
+	group, err := gs.groupRepository.GetByID(ctx, userID, groupID)
+	if err != nil {
+		return Joined{}, err
+	}
+
+	return Joined{
+		ID:           group.ID,
+		Name:         group.Name,
+		Role:         group.Role,
+		MembersCount: group.MembersCount,
+	}, nil
 }
 
 func (gs *Service) GetByID(ctx context.Context, userID int, groupID int) (Info, error) {

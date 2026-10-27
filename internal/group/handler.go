@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	commonerrors "github.com/adrian-kurek/fit_the_meet/common/errors"
@@ -23,7 +24,7 @@ type (
 		Remove(ctx context.Context, groupID, userID int) error
 		RemoveParticipants(ctx context.Context, groupID, userID int, participants []int) error
 		GenerateInviteCode(ctx context.Context, groupID, userID int) (string, error)
-		Join(ctx context.Context, userID int, code string) error
+		Join(ctx context.Context, userID int, code string) (Joined, error)
 		GetByID(ctx context.Context, userID, groupID int) (Info, error)
 		GetMany(ctx context.Context, userID int) ([]InfoWithoutParticipants, error)
 	}
@@ -231,14 +232,19 @@ func (gh *Handler) Join(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	activationCode := r.URL.Query().Get("code")
+	activationCode := strings.TrimSpace(r.URL.Query().Get("code"))
+	if activationCode == "" {
+		return commonerrors.Validation("activation code is required")
+	}
 
-	err = gh.groupService.Join(ctx, userID, activationCode)
+	group, err := gh.groupService.Join(ctx, userID, activationCode)
 	if err != nil {
 		return gh.handleTimeout(err, r.URL.Path)
 	}
 
-	response.Send(w, http.StatusNoContent, nil)
+	response.Send(w, http.StatusOK, map[string]any{
+		"group": group,
+	})
 
 	return nil
 }

@@ -16,6 +16,13 @@ type Permissions struct {
 	CanCreateItems   bool `json:"can_create_items"`
 }
 
+type Joined struct {
+	ID           int    `json:"id"`
+	Name         string `json:"name"`
+	Role         string `json:"role"`
+	MembersCount int    `json:"member_count"`
+}
+
 type Info struct {
 	ID           int           `json:"id"`
 	Name         string        `json:"name"`

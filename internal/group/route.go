@@ -15,6 +15,7 @@ type groupHandler interface {
 	RemoveParticipants(w http.ResponseWriter, r *http.Request) error
 	GenerateInviteCode(w http.ResponseWriter, r *http.Request) error
 	Join(w http.ResponseWriter, r *http.Request) error
+	GetByID(w http.ResponseWriter, r *http.Request) error
 }
 
 type Routes struct {
@@ -34,6 +35,7 @@ func (gr *Routes) Setup(router *http.ServeMux) {
 
 	router.Handle(fmt.Sprintf("PATCH %s/", prefix), request.Make(gr.groupHandler.Join, gr.logger))
 	router.Handle(fmt.Sprintf("POST %s/{groupID}", prefix), request.Make(gr.groupHandler.GenerateInviteCode, gr.logger))
+	router.Handle(fmt.Sprintf("GET %s/{groupID}", prefix), request.Make(gr.groupHandler.GetByID, gr.logger))
 	router.Handle(fmt.Sprintf("POST %s/", prefix), request.Make(gr.groupHandler.Create, gr.logger))
 	router.Handle(fmt.Sprintf("PATCH %s/{groupID}", prefix), request.Make(gr.groupHandler.UpdateName, gr.logger))
 	router.Handle(

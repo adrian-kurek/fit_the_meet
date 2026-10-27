@@ -54,6 +54,7 @@ type groupHandler interface {
 	RemoveParticipants(w http.ResponseWriter, r *http.Request) error
 	GenerateInviteCode(w http.ResponseWriter, r *http.Request) error
 	Join(w http.ResponseWriter, r *http.Request) error
+	GetByID(w http.ResponseWriter, r *http.Request) error
 }
 
 type DependencyConfig struct {

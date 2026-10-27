@@ -25,6 +25,7 @@ type (
 		GenerateInviteCode(ctx context.Context, groupID, userID int) (string, error)
 		Join(ctx context.Context, userID int, code string) error
 		GetGroupNamesForUser(ctx context.Context, userID int) ([]string, error)
+		GetByID(ctx context.Context, userID, groupID int) (Info, error)
 	}
 	authenticationMiddleware interface {
 		VerifyToken(r *http.Request) (*http.Request, error)
@@ -57,16 +58,24 @@ func (gh *Handler) handleTimeout(err error, path string) error {
 	return err
 }
 
+func (gh *Handler) authenticateAndGetUserID(r *http.Request) (int, error) {
+	r, err := gh.authenticationMiddleware.VerifyToken(r)
+	if err != nil {
+		return 0, gh.handleTimeout(err, r.URL.Path)
+	}
+
+	userID, err := request.ReadUserIDFromToken(r)
+	if err != nil {
+		return 0, err
+	}
+	return userID, nil
+}
+
 func (gh *Handler) Create(w http.ResponseWriter, r *http.Request) error {
 	ctx, cancel := context.WithTimeout(r.Context(), groupTimeout)
 	defer cancel()
 
-	r, err := gh.authenticationMiddleware.VerifyToken(r)
-	if err != nil {
-		return gh.handleTimeout(err, r.URL.Path)
-	}
-
-	userID, err := request.ReadUserIDFromToken(r)
+	userID, err := gh.authenticateAndGetUserID(r)
 	if err != nil {
 		return err
 	}
@@ -95,19 +104,14 @@ func (gh *Handler) UpdateName(w http.ResponseWriter, r *http.Request) error {
 	ctx, cancel := context.WithTimeout(r.Context(), groupTimeout)
 	defer cancel()
 
-	r, err := gh.authenticationMiddleware.VerifyToken(r)
-	if err != nil {
-		return gh.handleTimeout(err, r.URL.Path)
-	}
-
-	userID, err := request.ReadUserIDFromToken(r)
+	userID, err := gh.authenticateAndGetUserID(r)
 	if err != nil {
 		return err
 	}
 
 	groupID, err := strconv.Atoi(r.PathValue("groupID"))
-	if err != nil {
-		return err
+	if err != nil || groupID <= 0 {
+		return commonerrors.Validation("invalid group ID")
 	}
 
 	reqData, err := request.ReadBody[Input](r)
@@ -134,12 +138,7 @@ func (gh *Handler) Remove(w http.ResponseWriter, r *http.Request) error {
 	ctx, cancel := context.WithTimeout(r.Context(), groupTimeout)
 	defer cancel()
 
-	r, err := gh.authenticationMiddleware.VerifyToken(r)
-	if err != nil {
-		return gh.handleTimeout(err, r.URL.Path)
-	}
-
-	userID, err := request.ReadUserIDFromToken(r)
+	userID, err := gh.authenticateAndGetUserID(r)
 	if err != nil {
 		return err
 	}
@@ -163,12 +162,7 @@ func (gh *Handler) RemoveParticipants(w http.ResponseWriter, r *http.Request) er
 	ctx, cancel := context.WithTimeout(r.Context(), groupTimeout)
 	defer cancel()
 
-	r, err := gh.authenticationMiddleware.VerifyToken(r)
-	if err != nil {
-		return gh.handleTimeout(err, r.URL.Path)
-	}
-
-	userID, err := request.ReadUserIDFromToken(r)
+	userID, err := gh.authenticateAndGetUserID(r)
 	if err != nil {
 		return err
 	}
@@ -201,12 +195,7 @@ func (gh *Handler) GenerateInviteCode(w http.ResponseWriter, r *http.Request) er
 	ctx, cancel := context.WithTimeout(r.Context(), groupTimeout)
 	defer cancel()
 
-	r, err := gh.authenticationMiddleware.VerifyToken(r)
-	if err != nil {
-		return gh.handleTimeout(err, r.URL.Path)
-	}
-
-	userID, err := request.ReadUserIDFromToken(r)
+	userID, err := gh.authenticateAndGetUserID(r)
 	if err != nil {
 		return err
 	}
@@ -232,12 +221,7 @@ func (gh *Handler) Join(w http.ResponseWriter, r *http.Request) error {
 	ctx, cancel := context.WithTimeout(r.Context(), groupTimeout)
 	defer cancel()
 
-	r, err := gh.authenticationMiddleware.VerifyToken(r)
-	if err != nil {
-		return gh.handleTimeout(err, r.URL.Path)
-	}
-
-	userID, err := request.ReadUserIDFromToken(r)
+	userID, err := gh.authenticateAndGetUserID(r)
 	if err != nil {
 		return err
 	}
@@ -258,12 +242,7 @@ func (gh *Handler) GetGroupNamesForUser(w http.ResponseWriter, r *http.Request) 
 	ctx, cancel := context.WithTimeout(r.Context(), groupTimeout)
 	defer cancel()
 
-	r, err := gh.authenticationMiddleware.VerifyToken(r)
-	if err != nil {
-		return gh.handleTimeout(err, r.URL.Path)
-	}
-
-	userID, err := request.ReadUserIDFromToken(r)
+	userID, err := gh.authenticateAndGetUserID(r)
 	if err != nil {
 		return err
 	}
@@ -284,12 +263,7 @@ func (gh *Handler) GetGroupByID(w http.ResponseWriter, r *http.Request) error {
 	ctx, cancel := context.WithTimeout(r.Context(), groupTimeout)
 	defer cancel()
 
-	r, err := gh.authenticationMiddleware.VerifyToken(r)
-	if err != nil {
-		return gh.handleTimeout(err, r.URL.Path)
-	}
-
-	userID, err := request.ReadUserIDFromToken(r)
+	userID, err := gh.authenticateAndGetUserID(r)
 	if err != nil {
 		return err
 	}
@@ -310,12 +284,7 @@ func (gh *Handler) GetMany(w http.ResponseWriter, r *http.Request) error {
 	ctx, cancel := context.WithTimeout(r.Context(), groupTimeout)
 	defer cancel()
 
-	r, err := gh.authenticationMiddleware.VerifyToken(r)
-	if err != nil {
-		return gh.handleTimeout(err, r.URL.Path)
-	}
-
-	userID, err := request.ReadUserIDFromToken(r)
+	userID, err := gh.authenticateAndGetUserID(r)
 	if err != nil {
 		return err
 	}
@@ -327,6 +296,32 @@ func (gh *Handler) GetMany(w http.ResponseWriter, r *http.Request) error {
 
 	response.Send(w, http.StatusOK, map[string]any{
 		"groupNames": groupNames,
+	})
+
+	return nil
+}
+
+func (gh *Handler) GetByID(w http.ResponseWriter, r *http.Request) error {
+	ctx, cancel := context.WithTimeout(r.Context(), groupTimeout)
+	defer cancel()
+
+	userID, err := gh.authenticateAndGetUserID(r)
+	if err != nil {
+		return err
+	}
+
+	groupID, err := strconv.Atoi(r.PathValue("groupID"))
+	if err != nil || groupID <= 0 {
+		return commonerrors.Validation("invalid group ID")
+	}
+
+	group, err := gh.groupService.GetByID(ctx, userID, groupID)
+	if err != nil {
+		return gh.handleTimeout(err, r.URL.Path)
+	}
+
+	response.Send(w, http.StatusOK, map[string]any{
+		"group": group,
 	})
 
 	return nil

@@ -44,7 +44,6 @@ type IconName =
   | 'clock'
   | 'filter'
   | 'group'
-  | 'heart'
   | 'home'
   | 'lock'
   | 'location'
@@ -82,7 +81,6 @@ type Meeting = {
   softAccent: string;
   icon: IconName;
   attendees: string[];
-  favorite?: boolean;
   isActive?: boolean;
   apiId?: number | null;
   kind?: 'event' | 'poll';
@@ -219,7 +217,6 @@ const initialMeetings: Meeting[] = [
     softAccent: '#fff0f5',
     icon: 'sparkle',
     attendees: ['MK', 'AP', 'JT', 'LN'],
-    favorite: true,
     groupId: 101,
     options: [
       { id: 11, label: 'Monday, 26 Oct', detail: '10:00–10:50', votes: 8 },
@@ -292,7 +289,6 @@ const initialMeetings: Meeting[] = [
     softAccent: '#eaf9fb',
     icon: 'check',
     attendees: ['AK', 'MK', 'PS', 'EW'],
-    favorite: true,
     groupId: 103,
     options: [
       { id: 41, label: 'Wednesday, 28 Oct', detail: '13:00–13:45', votes: 9 },
@@ -350,7 +346,6 @@ const filterItems = [
   { id: 'needs-response', label: 'Needs your response', icon: 'sparkle' as IconName, color: '#e9346f' },
   { id: 'this-week', label: 'This week', icon: 'calendar' as IconName, color: '#6f45ed' },
   { id: 'ready', label: 'Ready to schedule', icon: 'check' as IconName, color: '#078fa4' },
-  { id: 'favorites', label: 'Favorites', icon: 'heart' as IconName, color: '#ff681d' },
 ];
 
 const initialGroups: WorkspaceGroup[] = [
@@ -441,7 +436,6 @@ function Icon({ name, size = 20, stroke = 1.9 }: { name: IconName; size?: number
     clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>,
     filter: <><path d="M4 6h16M7 12h10M10 18h4"/></>,
     group: <><path d="M16 19v-1.5a4.5 4.5 0 0 0-4.5-4.5h-3A4.5 4.5 0 0 0 4 17.5V19"/><circle cx="10" cy="7" r="3"/><path d="M17 11a3 3 0 0 1 3 3v2M16 4.5a3 3 0 0 1 0 5"/></>,
-    heart: <path d="M20.8 5.8a5.4 5.4 0 0 0-7.7 0L12 6.9l-1.1-1.1a5.4 5.4 0 0 0-7.7 7.7L12 22l8.8-8.5a5.4 5.4 0 0 0 0-7.7Z"/>,
     home: <><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10M9 20v-6h6v6"/></>,
     lock: <><rect x="4" y="10" width="16" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></>,
     location: <><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></>,
@@ -932,7 +926,6 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
       const matchesFilter = activeFilter === 'all'
         || (activeFilter === 'needs-response' && meeting.status === 'needs-response')
         || (activeFilter === 'ready' && meeting.status === 'ready')
-        || (activeFilter === 'favorites' && meeting.favorite)
         || activeFilter === 'this-week'
         || meeting.group === activeFilter;
       return matchesQuery && matchesResource && matchesAccess && matchesFilter;
@@ -1019,10 +1012,6 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
     } catch {
       setNotice('Could not copy the link automatically. Copy it from the address bar.');
     }
-  };
-
-  const toggleFavorite = (id: number) => {
-    setMeetings((current) => current.map((meeting) => meeting.id === id ? { ...meeting, favorite: !meeting.favorite } : meeting));
   };
 
   const parsedManagedEventId = typeof managedEventId === 'number' ? managedEventId : Number(managedEventId);
@@ -1401,7 +1390,6 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
     if (id === 'all' || id === 'this-week') return meetings.length;
     if (id === 'needs-response') return meetings.filter((meeting) => meeting.status === 'needs-response').length;
     if (id === 'ready') return meetings.filter((meeting) => meeting.status === 'ready').length;
-    if (id === 'favorites') return meetings.filter((meeting) => meeting.favorite).length;
     return meetings.filter((meeting) => meeting.group === id).length;
   };
 
@@ -1594,14 +1582,6 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
                   </Group>
                   <Group gap={14} wrap="nowrap" className="meeting-actions">
                     <span className="deadline"><Icon name="clock" size={18} />{meeting.dateLabel}</span>
-                    <ActionIcon
-                      className={`favorite-button ${meeting.favorite ? 'is-favorite' : ''}`}
-                      variant="transparent"
-                      aria-label={meeting.favorite ? 'Remove from favorites' : 'Add to favorites'}
-                      onClick={(event) => { event.stopPropagation(); toggleFavorite(meeting.id); }}
-                    >
-                      <Icon name="heart" size={22} />
-                    </ActionIcon>
                   </Group>
                 </Group>
               </article>

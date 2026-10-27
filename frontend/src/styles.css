@@ -439,20 +439,6 @@ select {
   color: #5f5d59;
 }
 
-.favorite-button {
-  color: #aaa9a5;
-}
-
-.favorite-button:hover,
-.favorite-button.is-favorite {
-  color: #e9346f;
-  background: #fff0f5;
-}
-
-.favorite-button.is-favorite svg {
-  fill: currentColor;
-}
-
 .empty-state {
   padding: 60px 24px;
   border: 2px dashed #cbc8c2;

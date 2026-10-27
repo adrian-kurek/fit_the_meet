@@ -24,8 +24,8 @@ type (
 		RemoveParticipants(ctx context.Context, groupID, userID int, participants []int) error
 		GenerateInviteCode(ctx context.Context, groupID, userID int) (string, error)
 		Join(ctx context.Context, userID int, code string) error
-		GetGroupNamesForUser(ctx context.Context, userID int) ([]string, error)
 		GetByID(ctx context.Context, userID, groupID int) (Info, error)
+		GetMany(ctx context.Context, userID int) ([]InfoWithoutParticipants, error)
 	}
 	authenticationMiddleware interface {
 		VerifyToken(r *http.Request) (*http.Request, error)
@@ -238,69 +238,6 @@ func (gh *Handler) Join(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (gh *Handler) GetGroupNamesForUser(w http.ResponseWriter, r *http.Request) error {
-	ctx, cancel := context.WithTimeout(r.Context(), groupTimeout)
-	defer cancel()
-
-	userID, err := gh.authenticateAndGetUserID(r)
-	if err != nil {
-		return err
-	}
-
-	groupNames, err := gh.groupService.GetGroupNamesForUser(ctx, userID)
-	if err != nil {
-		return gh.handleTimeout(err, r.URL.Path)
-	}
-
-	response.Send(w, http.StatusOK, map[string]any{
-		"groupNames": groupNames,
-	})
-
-	return nil
-}
-
-func (gh *Handler) GetGroupByID(w http.ResponseWriter, r *http.Request) error {
-	ctx, cancel := context.WithTimeout(r.Context(), groupTimeout)
-	defer cancel()
-
-	userID, err := gh.authenticateAndGetUserID(r)
-	if err != nil {
-		return err
-	}
-
-	groupNames, err := gh.groupService.GetGroupNamesForUser(ctx, userID)
-	if err != nil {
-		return gh.handleTimeout(err, r.URL.Path)
-	}
-
-	response.Send(w, http.StatusOK, map[string]any{
-		"groupNames": groupNames,
-	})
-
-	return nil
-}
-
-func (gh *Handler) GetMany(w http.ResponseWriter, r *http.Request) error {
-	ctx, cancel := context.WithTimeout(r.Context(), groupTimeout)
-	defer cancel()
-
-	userID, err := gh.authenticateAndGetUserID(r)
-	if err != nil {
-		return err
-	}
-
-	groupNames, err := gh.groupService.GetGroupNamesForUser(ctx, userID)
-	if err != nil {
-		return gh.handleTimeout(err, r.URL.Path)
-	}
-
-	response.Send(w, http.StatusOK, map[string]any{
-		"groupNames": groupNames,
-	})
-
-	return nil
-}
-
 func (gh *Handler) GetByID(w http.ResponseWriter, r *http.Request) error {
 	ctx, cancel := context.WithTimeout(r.Context(), groupTimeout)
 	defer cancel()
@@ -322,6 +259,27 @@ func (gh *Handler) GetByID(w http.ResponseWriter, r *http.Request) error {
 
 	response.Send(w, http.StatusOK, map[string]any{
 		"group": group,
+	})
+
+	return nil
+}
+
+func (gh *Handler) GetMany(w http.ResponseWriter, r *http.Request) error {
+	ctx, cancel := context.WithTimeout(r.Context(), groupTimeout)
+	defer cancel()
+
+	userID, err := gh.authenticateAndGetUserID(r)
+	if err != nil {
+		return err
+	}
+
+	groups, err := gh.groupService.GetMany(ctx, userID)
+	if err != nil {
+		return gh.handleTimeout(err, r.URL.Path)
+	}
+
+	response.Send(w, http.StatusOK, map[string]any{
+		"groups": groups,
 	})
 
 	return nil

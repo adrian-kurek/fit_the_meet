@@ -2,6 +2,20 @@ package group
 
 import "time"
 
+type InfoWithoutParticipants struct {
+	ID           int         `json:"id"`
+	Name         string      `json:"name"`
+	Role         string      `json:"role"`
+	MembersCount int         `json:"member_count"`
+	CreatedAt    time.Time   `json:"created_at"`
+	Permissions  Permissions `json:"permissions"`
+}
+
+type Permissions struct {
+	CanManageMembers bool `json:"can_manage_members"`
+	CanCreateItems   bool `json:"can_create_items"`
+}
+
 type Info struct {
 	ID           int           `json:"id"`
 	Name         string        `json:"name"`

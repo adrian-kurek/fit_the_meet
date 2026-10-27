@@ -14,6 +14,7 @@ type pollRepository interface {
 	Get(ctx context.Context, userID int) ([]Info, error)
 	Delete(ctx context.Context, userID, pollID int) error
 	DeleteAnswers(ctx context.Context, userID, pollID int) error
+	GetResults(ctx context.Context, userID, pollID int) ([]OptionResult, error)
 }
 
 type Service struct {
@@ -51,4 +52,8 @@ func (ps *Service) Delete(ctx context.Context, userID, pollID int) error {
 
 func (ps *Service) DeleteAnswers(ctx context.Context, userID, pollID int) error {
 	return ps.pollRepository.DeleteAnswers(ctx, userID, pollID)
+}
+
+func (ps *Service) GetResults(ctx context.Context, userID, pollID int) (Result, error) {
+	return ps.pollRepository.GetResults(ctx, userID, pollID)
 }

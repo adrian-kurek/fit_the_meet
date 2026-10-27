@@ -22,6 +22,7 @@ type pollService interface {
 	GetByID(ctx context.Context, userID, pollID int) ([]Info, error)
 	DeleteAnswers(ctx context.Context, userID, pollID int) error
 	Delete(ctx context.Context, userID, pollID int) error
+	GetResults(ctx context.Context, userID, pollID int) (Result, error)
 }
 
 const timeout = 5 * time.Second
@@ -266,6 +267,37 @@ func (ph *Handler) DeleteAnswers(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	response.Send(w, http.StatusNoContent, nil)
+
+	return nil
+}
+
+func (ph *Handler) GetResults(w http.ResponseWriter, r *http.Request) error {
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	defer cancel()
+
+	r, err := ph.authenticationMiddleware.VerifyToken(r)
+	if err != nil {
+		return ph.handleTimeout(err, r.URL.Path)
+	}
+
+	userID, err := request.ReadUserIDFromToken(r)
+	if err != nil {
+		return err
+	}
+
+	pollID, err := strconv.Atoi(r.PathValue("pollID"))
+	if err != nil || pollID <= 0 {
+		return commonerrors.Validation("invalid poll ID")
+	}
+
+	res, err := ph.pollService.GetResults(ctx, userID, pollID)
+	if err != nil {
+		return ph.handleTimeout(err, r.URL.Path)
+	}
+
+	response.Send(w, http.StatusOK, map[string]any{
+		"result": res,
+	})
 
 	return nil
 }

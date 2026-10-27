@@ -410,3 +410,101 @@ func (pr *Repository) DeleteAnswers(ctx context.Context, userID, pollID int) err
 
 	return nil
 }
+
+func (pr *Repository) GetResults(ctx context.Context, userID, pollID int) ([]OptionResult, error) {
+	const query = `
+	SELECT 
+	po.id,
+	po.start_time,
+	po.end_time,
+	COUNT(*) as number_of_answers,
+	(
+		(
+			SELECT COUNT(*) FROM poll
+			INNER JOIN poll_options po ON po.poll_id = p.id
+			INNER JOIN poll_answers pa ON pa.poll_option_id = po.id
+			WHERE p.id = $1 AND (p.created_by = $2 OR pa.user_id = $2)
+		)
+		/ COUNT(*) as number_of_answers
+	) * 100 as Percentage
+	FROM polls p
+	INNER JOIN poll_options po ON po.poll_id = p.id
+	INNER JOIN poll_answers pa ON pa.poll_option_id = po.id
+	WHERE p.id = $1 AND (p.created_by = $2 OR pa.user_id = $2)
+	GROUP BY po.id
+	`
+
+	stmt, err := pr.db.PrepareContext(ctx, query)
+	if err != nil {
+		pr.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
+			queryMsg: query,
+			errorMsg: err.Error(),
+		})
+		return nil, err
+	}
+	defer func() {
+		if closeErr := stmt.Close(); closeErr != nil {
+			pr.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
+		}
+	}()
+
+	var pollOptionResults []OptionResult
+
+	rows, err := stmt.QueryContext(ctx, pollID, userID)
+	if err != nil {
+		pr.logger.Error(commonerrors.FailedToExecuteSelectQuery, "data", map[string]any{
+			queryMsg: query,
+			argsMsg: map[string]any{
+				userIDMsg: userID,
+				pollIDMsg: pollID,
+			},
+			errorMsg: err,
+		})
+		return nil, err
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			pr.logger.Error(commonerrors.FailedToCloseStatement, closeErr)
+		}
+	}()
+
+	found := false
+	for rows.Next() {
+		found = true
+		var pollOptionResult OptionResult
+		err = rows.Scan(
+			&pollOptionResult.ID,
+			&pollOptionResult.StartAt,
+			&pollOptionResult.EndAt,
+			&pollOptionResult.VoteCount,
+			&pollOptionResult.Percentage,
+		)
+		if err != nil {
+			pr.logger.Error(commonerrors.FailedToScanRow, map[string]any{
+				queryMsg: query,
+				argsMsg: map[string]any{
+					userIDMsg: userID,
+				},
+				errorMsg: err,
+			})
+			return nil, err
+		}
+		pollOptionResults = append(pollOptionResults, pollOptionResult)
+	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		pr.logger.Error(commonerrors.FailedToScanRows, map[string]any{
+			queryMsg: query,
+			argsMsg: map[string]any{
+				userIDMsg: userID,
+			},
+			errorMsg: rowsErr.Error(),
+		})
+		return nil, rowsErr
+	}
+
+	if !found {
+		return nil, commonerrors.NotFound("")
+	}
+
+	return pollOptionResults, nil
+}

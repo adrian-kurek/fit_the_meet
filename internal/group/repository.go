@@ -421,3 +421,70 @@ func (gr *Repository) GetEventsForTheGroup(ctx context.Context, groupID, userID 
 
 	return names, nil
 }
+
+func (gr *Repository) GetGroups(ctx context.Context, userID int) ([]string, error) {
+	const query = `
+	SELECT
+		g.id,
+		g.name,
+		IF(g.created_by = $1,"owner","member") as role,
+		jmc.members_count,
+		g.created_at
+	FROM groups g
+	INNER JOIN group_participants gp ON gp.group_id = g.id
+	INNER JOIN (
+			SELECT g.id,COUNT(*) as members_count FROM groups g
+			INNER JOIN group_participants gp ON gp.group_id = g.id
+			GROUP BY  g.id
+		) as join_member_count jmc ON  jmc.id = g.id
+	WHERE g.created_by  = $1 OR gp.user_id = $1`
+
+	stmt, err := gr.db.PrepareContext(ctx, query)
+	if err != nil {
+		gr.logger.Error(commonerrors.FailedToPrepareQuery, "data", map[string]string{
+			queryMsg: query,
+			errorMsg: err.Error(),
+		})
+		return nil, err
+	}
+	defer func() {
+		if closeErr := stmt.Close(); closeErr != nil {
+			gr.logger.Error(commonerrors.FailedToCloseStatement, "err", closeErr)
+		}
+	}()
+
+	var names []string
+
+	rows, err := stmt.QueryContext(ctx, userID)
+	if err != nil {
+		gr.logger.Error(commonerrors.FailedToExecuteSelectQuery, "data", map[string]any{
+			queryMsg: query,
+			argsMsg: map[string]any{
+				userIDMsg: userID,
+			},
+			errorMsg: err.Error(),
+		})
+		return nil, err
+	}
+
+	for rows.Next() {
+		var name string
+		err = rows.Scan(&name)
+		if err != nil {
+			gr.logger.Error(commonerrors.FailedToScanRow, "data", map[string]any{
+				queryMsg: query,
+				errorMsg: err.Error(),
+			})
+			return nil, err
+		}
+		names = append(names, name)
+	}
+
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			gr.logger.Error(commonerrors.FailedToCloseRows, "err", closeErr)
+		}
+	}()
+
+	return names, nil
+}

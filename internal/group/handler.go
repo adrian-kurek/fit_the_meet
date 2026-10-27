@@ -305,3 +305,29 @@ func (gh *Handler) GetGroupByID(w http.ResponseWriter, r *http.Request) error {
 
 	return nil
 }
+
+func (gh *Handler) GetMany(w http.ResponseWriter, r *http.Request) error {
+	ctx, cancel := context.WithTimeout(r.Context(), groupTimeout)
+	defer cancel()
+
+	r, err := gh.authenticationMiddleware.VerifyToken(r)
+	if err != nil {
+		return gh.handleTimeout(err, r.URL.Path)
+	}
+
+	userID, err := request.ReadUserIDFromToken(r)
+	if err != nil {
+		return err
+	}
+
+	groupNames, err := gh.groupService.GetGroupNamesForUser(ctx, userID)
+	if err != nil {
+		return gh.handleTimeout(err, r.URL.Path)
+	}
+
+	response.Send(w, http.StatusOK, map[string]any{
+		"groupNames": groupNames,
+	})
+
+	return nil
+}

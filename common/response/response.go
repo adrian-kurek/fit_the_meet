@@ -9,7 +9,7 @@ import (
 func Send(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	if status == http.StatusNoContent || status == http.StatusCreated {
+	if status == http.StatusNoContent || data == nil {
 		return
 	}
 	err := json.NewEncoder(w).Encode(data)

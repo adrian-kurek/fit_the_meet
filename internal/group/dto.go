@@ -1,7 +1,7 @@
 package group
 
 type Input struct {
-	Name string `json:"username" validate:"required,min=6"`
+	Name string `json:"name" validate:"required,min=6"`
 }
 
 type RemoveParticipantsRequest struct {

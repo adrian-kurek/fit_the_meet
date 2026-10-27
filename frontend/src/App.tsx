@@ -1242,22 +1242,27 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
     const form = new FormData(formElement);
     const name = String(form.get('groupName') || '').trim();
     const providedID = Number(form.get('groupId'));
-    const groupID = Number.isInteger(providedID) && providedID > 0
+    let groupID = Number.isInteger(providedID) && providedID > 0
       ? providedID
       : Math.max(100, ...groups.map((group) => group.id)) + 1;
-    if (!name || (session.kind === 'api' && (!Number.isInteger(providedID) || providedID <= 0))) {
-      setGroupError(session.kind === 'api' ? 'Enter the group name and its numeric API ID.' : 'Enter a group name.');
+    if (!name) {
+      setGroupError('Enter a group name.');
       return;
     }
 
     setGroupPending(true);
     setGroupError('');
     try {
-      if (session.kind === 'api') await groupApi.create(name, session.accessToken);
+      let createdGroupName = name;
+      if (session.kind === 'api') {
+        const created = await groupApi.create(name, session.accessToken);
+        groupID = created.group.id;
+        createdGroupName = created.group.name;
+      }
       setGroups((current) => current.some((group) => group.id === groupID)
         ? current
-        : [...current, { id: groupID, name, color: '#6f45ed', role: 'owner', participants: [] }]);
-      setDashboardNotice(`Group “${name}” created. You can now add events and polls to it.`);
+        : [...current, { id: groupID, name: createdGroupName, color: '#6f45ed', role: 'owner', participants: [] }]);
+      setDashboardNotice(`Group “${createdGroupName}” created. You can now add events and polls to it.`);
       formElement.reset();
       setGroupAction('groups');
     } catch (requestError) {
@@ -2170,24 +2175,23 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
                   <Text c="dimmed" size="sm" mt={4}>You will be the group owner.</Text>
                   <Stack gap="md" mt="xl">
                     <TextInput name="groupName" label="Group name" placeholder="e.g. Study group" required minLength={6} autoFocus />
-                    <Paper className="api-id-field" radius="lg">
+                    {session.kind === 'demo' && <Paper className="api-id-field" radius="lg">
                       <Group gap={10} wrap="nowrap" align="flex-start">
                         <ThemeIcon color="gray" variant="light" radius="xl" size="sm"><Icon name="settings" size={13} /></ThemeIcon>
                         <Box>
-                          <Text size="sm" fw={800}>API details</Text>
-                          <Text size="xs" c="dimmed">Enter the ID of the matching API record.</Text>
+                          <Text size="sm" fw={800}>Demo details</Text>
+                          <Text size="xs" c="dimmed">Optionally choose an ID for the demo group.</Text>
                         </Box>
                       </Group>
                       <NumberInput
                         name="groupId"
-                        label={session.kind === 'api' ? 'Group ID' : 'Demo group ID'}
-                        placeholder={session.kind === 'api' ? 'Required, e.g. 24' : 'Optional · assigned automatically'}
+                        label="Demo group ID"
+                        placeholder="Optional · assigned automatically"
                         min={1}
                         allowDecimal={false}
-                        required={session.kind === 'api'}
                         mt="sm"
                       />
-                    </Paper>
+                    </Paper>}
                     <Button type="submit" className="create-button" fullWidth loading={groupPending}>Create group</Button>
                   </Stack>
                 </form>

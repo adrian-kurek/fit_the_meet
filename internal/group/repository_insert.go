@@ -7,8 +7,8 @@ import (
 	commonerrors "github.com/adrian-kurek/fit_the_meet/common/errors"
 )
 
-func (gr *Repository) Insert(ctx context.Context, name string, userID int) error {
-	const query = "INSERT INTO groups(name,created_by) VALUES($1,$2)"
+func (gr *Repository) Insert(ctx context.Context, name string, userID int) (int, error) {
+	const query = "INSERT INTO groups(name,created_by) VALUES($1,$2) RETURNING id"
 
 	stmt, err := gr.db.PrepareContext(ctx, query)
 	if err != nil {
@@ -16,7 +16,7 @@ func (gr *Repository) Insert(ctx context.Context, name string, userID int) error
 			queryMsg: query,
 			errorMsg: err.Error(),
 		})
-		return err
+		return 0, err
 	}
 	defer func() {
 		if closeErr := stmt.Close(); closeErr != nil {
@@ -24,7 +24,9 @@ func (gr *Repository) Insert(ctx context.Context, name string, userID int) error
 		}
 	}()
 
-	_, err = stmt.ExecContext(ctx, name, userID)
+	var id int
+
+	err = stmt.QueryRowContext(ctx, name, userID).Scan(&id)
 	if err != nil {
 		gr.logger.Error(commonerrors.FailedToExecuteInsertQuery, "data", map[string]any{
 			queryMsg: query,
@@ -34,10 +36,10 @@ func (gr *Repository) Insert(ctx context.Context, name string, userID int) error
 			},
 			errorMsg: err,
 		})
-		return err
+		return 0, err
 	}
 
-	return nil
+	return id, nil
 }
 
 func (gr *Repository) SaveInviteCode(ctx context.Context, groupID int, code string, expiresAt time.Time) error {

@@ -16,7 +16,7 @@ import (
 const lifespanOfActicationCode = 15 * time.Minute
 
 type groupRepository interface {
-	Insert(ctx context.Context, name string, userID int) error
+	Insert(ctx context.Context, name string, userID int) (int, error)
 	UpdateName(ctx context.Context, name string, groupID, userID int) error
 	DeleteOwnedGroup(ctx context.Context, groupID, userID int) error
 	RemoveParticipants(ctx context.Context, groupID, userID int, participants []int) error
@@ -40,7 +40,7 @@ func NewService(groupRepository groupRepository, logger commoninterfaces.Logger)
 	}
 }
 
-func (gs *Service) Create(ctx context.Context, name string, userID int) error {
+func (gs *Service) Create(ctx context.Context, name string, userID int) (int, error) {
 	return gs.groupRepository.Insert(ctx, name, userID)
 }
 

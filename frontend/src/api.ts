@@ -69,8 +69,11 @@ async function request<T>(path: string, options: RequestInit = {}, accessToken?:
     throw new ApiError(message, response.status);
   }
 
-  if (response.status === 204 || response.status === 201) return undefined as T;
-  return response.json() as Promise<T>;
+  if (response.status === 204) return undefined as T;
+
+  const responseBody = await response.text();
+  if (!responseBody) return undefined as T;
+  return JSON.parse(responseBody) as T;
 }
 
 export const authApi = {
@@ -137,10 +140,9 @@ export const pollApi = {
 
 export const groupApi = {
   async create(name: string, accessToken: string) {
-    return request<void>('/groups/', {
+    return request<{ group: { id: number; name: string } }>('/groups/', {
       method: 'POST',
-      // The current API names this field `username`; keep that wire format here.
-      body: JSON.stringify({ username: name }),
+      body: JSON.stringify({ name }),
     }, accessToken);
   },
 

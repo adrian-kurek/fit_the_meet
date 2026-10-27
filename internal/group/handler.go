@@ -18,7 +18,7 @@ const groupTimeout = 5 * time.Second
 
 type (
 	groupService interface {
-		Create(ctx context.Context, name string, userID int) error
+		Create(ctx context.Context, name string, userID int) (int, error)
 		UpdateName(ctx context.Context, name string, groupID, userID int) error
 		Remove(ctx context.Context, groupID, userID int) error
 		RemoveParticipants(ctx context.Context, groupID, userID int, participants []int) error
@@ -90,12 +90,17 @@ func (gh *Handler) Create(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	err = gh.groupService.Create(ctx, reqData.Name, userID)
+	id, err := gh.groupService.Create(ctx, reqData.Name, userID)
 	if err != nil {
 		return gh.handleTimeout(err, r.URL.Path)
 	}
 
-	response.Send(w, http.StatusCreated, nil)
+	response.Send(w, http.StatusCreated, map[string]any{
+		"group": map[string]any{
+			"id":   id,
+			"name": reqData.Name,
+		},
+	})
 
 	return nil
 }

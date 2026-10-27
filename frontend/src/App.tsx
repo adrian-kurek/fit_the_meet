@@ -1277,9 +1277,14 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const code = String(form.get('activationCode') || '').trim();
-    const name = String(form.get('joinedGroupName') || '').trim();
-    const groupID = Number(form.get('joinedGroupId'));
-    if (!code || !name || !Number.isInteger(groupID) || groupID <= 0) {
+    let name = String(form.get('joinedGroupName') || '').trim();
+    let groupID = Number(form.get('joinedGroupId'));
+    let joinedRole: 'owner' | 'member' = 'member';
+    if (!code) {
+      setGroupError('Enter the activation code.');
+      return;
+    }
+    if (session.kind === 'demo' && (!name || !Number.isInteger(groupID) || groupID <= 0)) {
       setGroupError('Enter the activation code, group name, and numeric group ID.');
       return;
     }
@@ -1287,10 +1292,15 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
     setGroupPending(true);
     setGroupError('');
     try {
-      if (session.kind === 'api') await groupApi.join(code, session.accessToken);
+      if (session.kind === 'api') {
+        const joined = await groupApi.join(code, session.accessToken);
+        groupID = joined.group.id;
+        name = joined.group.name;
+        joinedRole = joined.group.role;
+      }
       setGroups((current) => current.some((group) => group.id === groupID)
         ? current
-        : [...current, { id: groupID, name, color: '#168a56', role: 'member', participants: [] }]);
+        : [...current, { id: groupID, name, color: '#168a56', role: joinedRole, participants: [] }]);
       setDashboardNotice(`You joined “${name}”. Group events and polls are now available.`);
       formElement.reset();
       setGroupAction('groups');
@@ -2209,14 +2219,14 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
                       required
                       autoFocus
                     />
-                    <Paper className="workspace-details" radius="lg">
+                    {session.kind === 'demo' && <Paper className="workspace-details" radius="lg">
                       <Text size="sm" fw={800}>Group details</Text>
-                      <Text size="xs" c="dimmed" mt={2}>Enter the group name and ID used by the API.</Text>
+                      <Text size="xs" c="dimmed" mt={2}>Enter details for the demo group.</Text>
                       <Group grow mt="sm">
                         <TextInput name="joinedGroupName" label="Group name" placeholder="Study group" required />
                         <NumberInput name="joinedGroupId" label="Group ID" placeholder="24" min={1} allowDecimal={false} required />
                       </Group>
-                    </Paper>
+                    </Paper>}
                     <Button type="submit" className="create-button" fullWidth loading={groupPending}>Join group</Button>
                   </Stack>
                 </form>

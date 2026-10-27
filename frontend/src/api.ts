@@ -147,7 +147,11 @@ export const groupApi = {
   },
 
   async join(code: string, accessToken: string) {
-    return request<void>(`/groups/?code=${encodeURIComponent(code)}`, { method: 'PATCH' }, accessToken);
+    return request<{ group: { id: number; name: string; role: 'owner' | 'member'; member_count: number } }>(
+      `/groups/?code=${encodeURIComponent(code)}`,
+      { method: 'PATCH' },
+      accessToken,
+    );
   },
 
   async generateActivationCode(groupId: number, accessToken: string) {

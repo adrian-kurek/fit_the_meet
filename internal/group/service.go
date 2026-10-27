@@ -16,7 +16,7 @@ import (
 const lifespanOfActicationCode = 15 * time.Minute
 
 type groupRepository interface {
-	Insert(ctx context.Context, name string, userID int) error
+	Insert(ctx context.Context, name string, userID int) (int, error)
 	UpdateName(ctx context.Context, name string, groupID, userID int) error
 	DeleteOwnedGroup(ctx context.Context, groupID, userID int) error
 	RemoveParticipants(ctx context.Context, groupID, userID int, participants []int) error
@@ -24,7 +24,8 @@ type groupRepository interface {
 	SaveInviteCode(ctx context.Context, groupID int, code string, expiresAt time.Time) error
 	AddMember(ctx context.Context, groupID, userID int) error
 	FindGroupIDByInviteCode(ctx context.Context, code string) (int, error)
-	GetGroupNamesForUser(ctx context.Context, userID int) ([]string, error)
+	GetByID(ctx context.Context, userID, groupID int) (Info, error)
+	GetMany(ctx context.Context, userID int) ([]InfoWithoutParticipants, error)
 }
 
 type Service struct {
@@ -39,7 +40,7 @@ func NewService(groupRepository groupRepository, logger commoninterfaces.Logger)
 	}
 }
 
-func (gs *Service) Create(ctx context.Context, name string, userID int) error {
+func (gs *Service) Create(ctx context.Context, name string, userID int) (int, error) {
 	return gs.groupRepository.Insert(ctx, name, userID)
 }
 
@@ -81,14 +82,36 @@ func (gs *Service) GenerateInviteCode(ctx context.Context, groupID, userID int) 
 	return code, nil
 }
 
-func (gs *Service) Join(ctx context.Context, userID int, code string) error {
+func (gs *Service) Join(ctx context.Context, userID int, code string) (Joined, error) {
 	groupID, err := gs.groupRepository.FindGroupIDByInviteCode(ctx, code)
 	if err != nil {
-		return err
+		if errors.Is(err, sql.ErrNoRows) {
+			return Joined{}, commonerrors.NotFound("activation code not found or expired")
+		}
+		return Joined{}, err
 	}
-	return gs.groupRepository.AddMember(ctx, groupID, userID)
+
+	if err = gs.groupRepository.AddMember(ctx, groupID, userID); err != nil {
+		return Joined{}, err
+	}
+
+	group, err := gs.groupRepository.GetByID(ctx, userID, groupID)
+	if err != nil {
+		return Joined{}, err
+	}
+
+	return Joined{
+		ID:           group.ID,
+		Name:         group.Name,
+		Role:         group.Role,
+		MembersCount: group.MembersCount,
+	}, nil
 }
 
-func (gs *Service) GetGroupNamesForUser(ctx context.Context, userID int) ([]string, error) {
-	return gs.groupRepository.GetGroupNamesForUser(ctx, userID)
+func (gs *Service) GetByID(ctx context.Context, userID int, groupID int) (Info, error) {
+	return gs.groupRepository.GetByID(ctx, userID, groupID)
+}
+
+func (gs *Service) GetMany(ctx context.Context, userID int) ([]InfoWithoutParticipants, error) {
+	return gs.groupRepository.GetMany(ctx, userID)
 }

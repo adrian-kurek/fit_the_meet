@@ -229,7 +229,6 @@ func readListOptions(r *http.Request) (int, int, ListOptions, error) {
 		return 0, 0, ListOptions{}, commonerrors.Validation("page_size must not exceed 100")
 	}
 
-	// Keep the offset calculation bounded on all supported architectures.
 	if page > 1_000_000 {
 		return 0, 0, ListOptions{}, commonerrors.Validation("page must not exceed 1000000")
 	}
@@ -270,4 +269,30 @@ func readPositiveQueryInt(r *http.Request, name string, fallback int) (int, erro
 	}
 
 	return value, nil
+}
+
+func (eh *Handler) GetByCode(w http.ResponseWriter, r *http.Request) error {
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	defer cancel()
+
+	userID, err := eh.authenticateAndGetUserID(r)
+	if err != nil {
+		return err
+	}
+
+	code, err := strconv.Atoi(r.PathValue("code"))
+	if err != nil {
+		return err
+	}
+
+	group, err := eh.eventService.GetByCode(ctx, userID, code)
+	if err != nil {
+		return eh.handleTimeout(err, r.URL.Path)
+	}
+
+	response.Send(w, http.StatusOK, map[string]any{
+		"group": group,
+	})
+
+	return nil
 }

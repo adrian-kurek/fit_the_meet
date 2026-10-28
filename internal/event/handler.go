@@ -19,13 +19,18 @@ type eventService interface {
 	CreateForGroup(ctx context.Context, userID, groupID int, event Input) error
 	ToggleActive(ctx context.Context, userID int, eventID int) error
 	AddTimeBlocks(ctx context.Context, userID int, eventID int, timeBlocks SubmitAvailabilityRequest) error
+	GetMany(ctx context.Context, userID int, options ListOptions) ([]Info, error)
 }
 
 type authenticationMiddleware interface {
 	VerifyToken(r *http.Request) (*http.Request, error)
 }
 
-const timeout = 5 * time.Second
+const (
+	timeout              = 5 * time.Second
+	defaultEventPageSize = 20
+	maxEventPageSize     = 100
+)
 
 type Handler struct {
 	eventService             eventService
@@ -57,6 +62,19 @@ func (eh *Handler) Create(w http.ResponseWriter, r *http.Request) error {
 	return eh.create(w, r, nil)
 }
 
+func (eh *Handler) authenticateAndGetUserID(r *http.Request) (int, error) {
+	r, err := eh.authenticationMiddleware.VerifyToken(r)
+	if err != nil {
+		return 0, eh.handleTimeout(err, r.URL.Path)
+	}
+
+	userID, err := request.ReadUserIDFromToken(r)
+	if err != nil {
+		return 0, err
+	}
+	return userID, nil
+}
+
 func (eh *Handler) CreateForGroup(w http.ResponseWriter, r *http.Request) error {
 	groupID, err := strconv.Atoi(r.PathValue("groupID"))
 	if err != nil || groupID <= 0 {
@@ -70,12 +88,7 @@ func (eh *Handler) create(w http.ResponseWriter, r *http.Request, groupID *int) 
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 
-	r, err := eh.authenticationMiddleware.VerifyToken(r)
-	if err != nil {
-		return eh.handleTimeout(err, r.URL.Path)
-	}
-
-	userID, err := request.ReadUserIDFromToken(r)
+	userID, err := eh.authenticateAndGetUserID(r)
 	if err != nil {
 		return err
 	}
@@ -107,12 +120,7 @@ func (eh *Handler) ToggleActive(w http.ResponseWriter, r *http.Request) error {
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 
-	r, err := eh.authenticationMiddleware.VerifyToken(r)
-	if err != nil {
-		return eh.handleTimeout(err, r.URL.Path)
-	}
-
-	userID, err := request.ReadUserIDFromToken(r)
+	userID, err := eh.authenticateAndGetUserID(r)
 	if err != nil {
 		return err
 	}
@@ -135,12 +143,7 @@ func (eh *Handler) AddTimeBlocks(w http.ResponseWriter, r *http.Request) error {
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 
-	r, err := eh.authenticationMiddleware.VerifyToken(r)
-	if err != nil {
-		return eh.handleTimeout(err, r.URL.Path)
-	}
-
-	userID, err := request.ReadUserIDFromToken(r)
+	userID, err := eh.authenticateAndGetUserID(r)
 	if err != nil {
 		return err
 	}
@@ -171,4 +174,100 @@ func (eh *Handler) AddTimeBlocks(w http.ResponseWriter, r *http.Request) error {
 	response.Send(w, http.StatusNoContent, nil)
 
 	return nil
+}
+
+func (eh *Handler) GetMany(w http.ResponseWriter, r *http.Request) error {
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	defer cancel()
+
+	userID, err := eh.authenticateAndGetUserID(r)
+	if err != nil {
+		return err
+	}
+
+	page, pageSize, options, err := readListOptions(r)
+	if err != nil {
+		return err
+	}
+
+	events, err := eh.eventService.GetMany(ctx, userID, options)
+	if err != nil {
+		return eh.handleTimeout(err, r.URL.Path)
+	}
+	if events == nil {
+		events = make([]Info, 0)
+	}
+
+	hasMore := len(events) > pageSize
+	if hasMore {
+		events = events[:pageSize]
+	}
+
+	response.Send(w, http.StatusOK, map[string]any{
+		"events": events,
+		"pagination": map[string]any{
+			"page":      page,
+			"page_size": pageSize,
+			"has_more":  hasMore,
+		},
+	})
+
+	return nil
+}
+
+func readListOptions(r *http.Request) (int, int, ListOptions, error) {
+	page, err := readPositiveQueryInt(r, "page", 1)
+	if err != nil {
+		return 0, 0, ListOptions{}, err
+	}
+
+	pageSize, err := readPositiveQueryInt(r, "page_size", defaultEventPageSize)
+	if err != nil {
+		return 0, 0, ListOptions{}, err
+	}
+	if pageSize > maxEventPageSize {
+		return 0, 0, ListOptions{}, commonerrors.Validation("page_size must not exceed 100")
+	}
+
+	// Keep the offset calculation bounded on all supported architectures.
+	if page > 1_000_000 {
+		return 0, 0, ListOptions{}, commonerrors.Validation("page must not exceed 1000000")
+	}
+
+	options := ListOptions{
+		Limit:  pageSize + 1,
+		Offset: (page - 1) * pageSize,
+	}
+
+	if rawIsActive := r.URL.Query().Get("is_active"); rawIsActive != "" {
+		isActive, parseErr := strconv.ParseBool(rawIsActive)
+		if parseErr != nil {
+			return 0, 0, ListOptions{}, commonerrors.Validation("is_active must be true or false")
+		}
+		options.IsActive = &isActive
+	}
+
+	if rawGroupID := r.URL.Query().Get("group_id"); rawGroupID != "" {
+		groupID, parseErr := strconv.Atoi(rawGroupID)
+		if parseErr != nil || groupID <= 0 {
+			return 0, 0, ListOptions{}, commonerrors.Validation("group_id must be a positive integer")
+		}
+		options.GroupID = &groupID
+	}
+
+	return page, pageSize, options, nil
+}
+
+func readPositiveQueryInt(r *http.Request, name string, fallback int) (int, error) {
+	rawValue := r.URL.Query().Get(name)
+	if rawValue == "" {
+		return fallback, nil
+	}
+
+	value, err := strconv.Atoi(rawValue)
+	if err != nil || value <= 0 {
+		return 0, commonerrors.Validation(name + " must be a positive integer")
+	}
+
+	return value, nil
 }

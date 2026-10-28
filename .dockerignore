@@ -1,0 +1,7 @@
+.git
+.env
+_postgres
+node_modules
+frontend/dist
+logs
+tmp

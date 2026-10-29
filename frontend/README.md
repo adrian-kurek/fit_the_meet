@@ -16,9 +16,12 @@ Vite proxies `/api` to the existing Go API at `http://127.0.0.1:8080`. Override 
 - `POST /auth/register`
 - `POST /auth/login`
 - `DELETE /auth/logout`
+- `GET /events/`
+- `GET /events/{eventID}`
+- `GET /events/code/{code}`
 - `POST /events/`
 - `POST /groups/{groupID}/events/`
 - `PATCH /events/{eventID}`
 - `PUT /events/{eventID}`
 
-The frontend does not require or make changes to the Go backend. Because the backend currently has no event-list/detail route and event creation returns no ID, the dashboard cards are preview data and the event drawer accepts an explicit event ID for status and availability mutations.
+Authenticated event cards are loaded from the API. Opening a card fetches its full availability data, join links resolve through the event code endpoint, and event mutations refresh the detail from the backend. Demo mode still uses local sample data. Poll cards remain local until poll list and detail endpoints are added.

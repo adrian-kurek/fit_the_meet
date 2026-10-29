@@ -5,13 +5,13 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	commonerrors "github.com/adrian-kurek/fit_the_meet/common/errors"
 	commoninterfaces "github.com/adrian-kurek/fit_the_meet/common/interfaces"
 	"github.com/adrian-kurek/fit_the_meet/common/request"
 	"github.com/adrian-kurek/fit_the_meet/common/response"
-	"github.com/adrian-kurek/fit_the_meet/common/validation"
 )
 
 type eventService interface {
@@ -20,6 +20,8 @@ type eventService interface {
 	ToggleActive(ctx context.Context, userID int, eventID int) error
 	AddTimeBlocks(ctx context.Context, userID int, eventID int, timeBlocks SubmitAvailabilityRequest) error
 	GetMany(ctx context.Context, userID int, options ListOptions) ([]Info, error)
+	GetByID(ctx context.Context, userID, eventID int) (Detail, error)
+	GetByCode(ctx context.Context, userID int, code string) (Detail, error)
 }
 
 type authenticationMiddleware interface {
@@ -93,12 +95,7 @@ func (eh *Handler) create(w http.ResponseWriter, r *http.Request, groupID *int) 
 		return err
 	}
 
-	reqData, err := request.ReadBody[Input](r)
-	if err != nil {
-		return commonerrors.Validation("provided invalid json format")
-	}
-
-	err = validation.ValidateRequestData(reqData)
+	reqData, err := request.ReadAndValidateBody[Input](r)
 	if err != nil {
 		return err
 	}
@@ -153,15 +150,11 @@ func (eh *Handler) AddTimeBlocks(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	reqData, err := request.ReadBody[SubmitAvailabilityRequest](r)
-	if err != nil {
-		return commonerrors.Validation("provided invalid json format")
-	}
-
-	err = validation.ValidateRequestData(reqData)
+	reqData, err := request.ReadAndValidateBody[SubmitAvailabilityRequest](r)
 	if err != nil {
 		return err
 	}
+
 	if err = reqData.Validate(); err != nil {
 		return err
 	}
@@ -280,18 +273,44 @@ func (eh *Handler) GetByCode(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	code, err := strconv.Atoi(r.PathValue("code"))
-	if err != nil {
-		return err
+	code := strings.TrimSpace(r.PathValue("code"))
+	if code == "" {
+		return commonerrors.Validation("event code is required")
 	}
 
-	group, err := eh.eventService.GetByCode(ctx, userID, code)
+	event, err := eh.eventService.GetByCode(ctx, userID, code)
 	if err != nil {
 		return eh.handleTimeout(err, r.URL.Path)
 	}
 
 	response.Send(w, http.StatusOK, map[string]any{
-		"group": group,
+		"event": event,
+	})
+
+	return nil
+}
+
+func (eh *Handler) GetByID(w http.ResponseWriter, r *http.Request) error {
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	defer cancel()
+
+	userID, err := eh.authenticateAndGetUserID(r)
+	if err != nil {
+		return err
+	}
+
+	eventID, err := strconv.Atoi(r.PathValue("eventID"))
+	if err != nil || eventID <= 0 {
+		return commonerrors.Validation("invalid event ID")
+	}
+
+	event, err := eh.eventService.GetByID(ctx, userID, eventID)
+	if err != nil {
+		return eh.handleTimeout(err, r.URL.Path)
+	}
+
+	response.Send(w, http.StatusOK, map[string]any{
+		"event": event,
 	})
 
 	return nil

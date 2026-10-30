@@ -91,46 +91,46 @@ func (as *Service) Login(
 	login LoginRequest,
 	ipAddress string,
 	deviceInfo string,
-) (string, []byte, error) {
+) (accessToken string, refreshToken []byte, id int, username string, err error) {
 	user, err := as.userRepository.GetByEmail(ctx, login.Email)
 	if err != nil {
-		return "", nil, err
+		return "", nil, 0, "", err
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(login.Password))
 	if err != nil {
-		return "", nil, commonerrors.Unauthorized("provided invalid password")
+		return "", nil, 0, "", commonerrors.Unauthorized("provided invalid password")
 	}
 
 	if err = ctx.Err(); err != nil {
-		return "", nil, err
+		return "", nil, 0, "", err
 	}
 
-	accessToken, err := as.authenticationMiddleware.GenerateAccessToken(user)
+	accessToken, err = as.authenticationMiddleware.GenerateAccessToken(user)
 	if err != nil {
-		return "", nil, err
+		return "", nil, 0, "", err
 	}
 
-	refreshToken, err := as.authenticationMiddleware.GenerateRefreshToken()
+	refreshToken, err = as.authenticationMiddleware.GenerateRefreshToken()
 	if err != nil {
-		return "", nil, err
+		return "", nil, 0, "", err
 	}
 
 	hashedRefreshToken := as.authenticationMiddleware.HashToken(refreshToken)
 
 	if err = ctx.Err(); err != nil {
-		return "", nil, err
+		return "", nil, 0, "", err
 	}
 	if err = ctx.Err(); err != nil {
-		return "", nil, err
+		return "", nil, 0, "", err
 	}
 
 	err = as.authRepository.SaveRefreshToken(ctx, ipAddress, deviceInfo, hashedRefreshToken, user.ID)
 	if err != nil {
-		return "", nil, err
+		return "", nil, 0, "", err
 	}
 
-	return accessToken, refreshToken, nil
+	return accessToken, refreshToken, user.ID, user.Username, nil
 }
 
 func (as *Service) validateToken(tokenWithUser TokenWithUser) error {

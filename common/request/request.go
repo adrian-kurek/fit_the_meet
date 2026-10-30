@@ -12,6 +12,7 @@ import (
 	commonerrors "github.com/adrian-kurek/fit_the_meet/common/errors"
 	commoninterfaces "github.com/adrian-kurek/fit_the_meet/common/interfaces"
 	"github.com/adrian-kurek/fit_the_meet/common/response"
+	"github.com/adrian-kurek/fit_the_meet/common/validation"
 )
 
 type HTTPFunc func(w http.ResponseWriter, r *http.Request) error
@@ -74,4 +75,17 @@ func ReadQueryParam(r *http.Request, queryName string) string {
 func SetContext(r *http.Request, key, data any) *http.Request {
 	ctx := context.WithValue(r.Context(), key, data)
 	return r.WithContext(ctx)
+}
+
+func ReadAndValidateBody[T any](r *http.Request) (*T, error) {
+	reqData, err := ReadBody[T](r)
+	if err != nil {
+		return nil, commonerrors.Validation("provided invalid json format")
+	}
+
+	err = validation.ValidateRequestData(reqData)
+	if err != nil {
+		return nil, err
+	}
+	return reqData, nil
 }

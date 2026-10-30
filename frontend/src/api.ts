@@ -19,6 +19,46 @@ export type AvailabilityTimeBlock = {
   end_time: string;
 };
 
+export type EventSummary = {
+  id: number;
+  name: string;
+  description: string;
+  duration_minutes: number;
+  code: string;
+  is_active: boolean;
+  created_by: number;
+  group_id: number | null;
+  response_count: number;
+  participant_count: number;
+  created_at: string;
+};
+
+export type EventTimeBlock = AvailabilityTimeBlock & {
+  user_id: number;
+  username: string;
+  submitted_by_me: boolean;
+};
+
+export type EventDetail = EventSummary & {
+  time_blocks: EventTimeBlock[];
+};
+
+export type EventListResponse = {
+  events: EventSummary[];
+  pagination: {
+    page: number;
+    page_size: number;
+    has_more: boolean;
+  };
+};
+
+export type EventListOptions = {
+  page?: number;
+  pageSize?: number;
+  isActive?: boolean;
+  groupId?: number;
+};
+
 export type PollInput = EventInput & {
   options: Array<{
     start_time: string;
@@ -97,6 +137,25 @@ export const authApi = {
 };
 
 export const eventApi = {
+  async getMany(accessToken: string, options: EventListOptions = {}) {
+    const query = new URLSearchParams();
+    if (options.page) query.set('page', String(options.page));
+    if (options.pageSize) query.set('page_size', String(options.pageSize));
+    if (options.isActive !== undefined) query.set('is_active', String(options.isActive));
+    if (options.groupId) query.set('group_id', String(options.groupId));
+    const queryString = query.toString();
+    const suffix = queryString ? `?${queryString}` : '';
+    return request<EventListResponse>(`/events/${suffix}`, {}, accessToken);
+  },
+
+  async getByID(eventId: number, accessToken: string) {
+    return request<{ event: EventDetail }>(`/events/${eventId}`, {}, accessToken);
+  },
+
+  async getByCode(code: string, accessToken: string) {
+    return request<{ event: EventDetail }>(`/events/code/${encodeURIComponent(code)}`, {}, accessToken);
+  },
+
   async create(input: EventInput, accessToken: string, groupId?: number) {
     const path = groupId ? `/groups/${groupId}/events/` : '/events/';
     return request<void>(path, {

@@ -12,7 +12,6 @@ import (
 	commoninterfaces "github.com/adrian-kurek/fit_the_meet/common/interfaces"
 	"github.com/adrian-kurek/fit_the_meet/common/request"
 	"github.com/adrian-kurek/fit_the_meet/common/response"
-	"github.com/adrian-kurek/fit_the_meet/common/validation"
 )
 
 const groupTimeout = 5 * time.Second
@@ -81,12 +80,7 @@ func (gh *Handler) Create(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	reqData, err := request.ReadBody[Input](r)
-	if err != nil {
-		return commonerrors.Validation("provided invalid json format")
-	}
-
-	err = validation.ValidateRequestData(reqData)
+	reqData, err := request.ReadAndValidateBody[Input](r)
 	if err != nil {
 		return err
 	}
@@ -120,12 +114,7 @@ func (gh *Handler) UpdateName(w http.ResponseWriter, r *http.Request) error {
 		return commonerrors.Validation("invalid group ID")
 	}
 
-	reqData, err := request.ReadBody[Input](r)
-	if err != nil {
-		return commonerrors.Validation("provided invalid json format")
-	}
-
-	err = validation.ValidateRequestData(reqData)
+	reqData, err := request.ReadAndValidateBody[Input](r)
 	if err != nil {
 		return err
 	}
@@ -178,12 +167,7 @@ func (gh *Handler) RemoveParticipants(w http.ResponseWriter, r *http.Request) er
 		return err
 	}
 
-	reqData, err := request.ReadBody[RemoveParticipantsRequest](r)
-	if err != nil {
-		return commonerrors.Validation("provided invalid json format")
-	}
-
-	err = validation.ValidateRequestData(reqData)
+	reqData, err := request.ReadAndValidateBody[RemoveParticipantsRequest](r)
 	if err != nil {
 		return err
 	}

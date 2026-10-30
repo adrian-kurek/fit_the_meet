@@ -24,6 +24,9 @@ type eventHandler interface {
 	CreateForGroup(w http.ResponseWriter, r *http.Request) error
 	ToggleActive(w http.ResponseWriter, r *http.Request) error
 	AddTimeBlocks(w http.ResponseWriter, r *http.Request) error
+	GetMany(w http.ResponseWriter, r *http.Request) error
+	GetByID(w http.ResponseWriter, r *http.Request) error
+	GetByCode(w http.ResponseWriter, r *http.Request) error
 }
 
 type pollHandler interface {

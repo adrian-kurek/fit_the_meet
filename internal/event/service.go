@@ -12,6 +12,9 @@ type eventRepository interface {
 	InsertForGroup(ctx context.Context, userID, groupID int, code string, event Input) error
 	ToggleActive(ctx context.Context, eventID, userID int) error
 	InsertTimeBlocks(ctx context.Context, userID, eventID int, timeBlocks SubmitAvailabilityRequest) error
+	GetMany(ctx context.Context, userID int, options ListOptions) ([]Info, error)
+	GetByID(ctx context.Context, userID, eventID int) (Detail, error)
+	GetByCode(ctx context.Context, userID int, code string) (Detail, error)
 }
 
 type Service struct {
@@ -45,4 +48,16 @@ func (es *Service) ToggleActive(ctx context.Context, userID int, eventID int) er
 
 func (es *Service) AddTimeBlocks(ctx context.Context, userID, eventID int, timeBlocks SubmitAvailabilityRequest) error {
 	return es.eventRepository.InsertTimeBlocks(ctx, userID, eventID, timeBlocks)
+}
+
+func (es *Service) GetMany(ctx context.Context, userID int, options ListOptions) ([]Info, error) {
+	return es.eventRepository.GetMany(ctx, userID, options)
+}
+
+func (es *Service) GetByID(ctx context.Context, userID, eventID int) (Detail, error) {
+	return es.eventRepository.GetByID(ctx, userID, eventID)
+}
+
+func (es *Service) GetByCode(ctx context.Context, userID int, code string) (Detail, error) {
+	return es.eventRepository.GetByCode(ctx, userID, code)
 }

@@ -1,4 +1,4 @@
-import { FormEvent, PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActionIcon,
   Anchor,
@@ -31,6 +31,9 @@ import {
   ApiError,
   authApi,
   AvailabilityTimeBlock,
+  EventDetail,
+  EventSummary,
+  EventTimeBlock,
   eventApi,
   groupApi,
   LoginCredentials,
@@ -85,6 +88,7 @@ type Meeting = {
   apiId?: number | null;
   kind?: 'event' | 'poll';
   groupId?: number;
+  availability?: EventTimeBlock[];
   options: TimeOption[];
 };
 
@@ -429,6 +433,87 @@ function loadStoredGroups() {
   }
 }
 
+const eventColors = [
+  { accent: '#e9346f', softAccent: '#fff0f5' },
+  { accent: '#6f45ed', softAccent: '#f3efff' },
+  { accent: '#078fa4', softAccent: '#eaf9fb' },
+  { accent: '#168a56', softAccent: '#ecfbf4' },
+  { accent: '#ff681d', softAccent: '#fff2ea' },
+];
+
+function eventOptions(timeBlocks: EventTimeBlock[]) {
+  const options = new Map<string, TimeOption>();
+  timeBlocks.forEach((block) => {
+    const key = `${block.date}|${block.start_time}|${block.end_time}`;
+    const existing = options.get(key);
+    if (existing) {
+      existing.votes += 1;
+      return;
+    }
+    options.set(key, {
+      id: options.size + 1,
+      label: formatDay(block.date),
+      detail: `${block.start_time.slice(0, 5)}–${block.end_time.slice(0, 5)}`,
+      votes: 1,
+    });
+  });
+  return [...options.values()];
+}
+
+function initialsFor(username: string) {
+  return username
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('');
+}
+
+function eventToMeeting(event: EventSummary | EventDetail, groups: WorkspaceGroup[]): Meeting {
+  const colors = eventColors[event.id % eventColors.length];
+  const hasDetail = 'time_blocks' in event;
+  const timeBlocks = hasDetail ? event.time_blocks : [];
+  const respondedByMe = timeBlocks.some((block) => block.submitted_by_me);
+  const group = event.group_id
+    ? groups.find((item) => item.id === event.group_id)?.name || 'Private group'
+    : 'Open event';
+  const createdAt = new Date(event.created_at);
+  const createdLabel = Number.isNaN(createdAt.getTime())
+    ? 'Recently created'
+    : `Created ${new Intl.DateTimeFormat('en', { day: 'numeric', month: 'short' }).format(createdAt)}`;
+  const status: MeetingStatus = hasDetail && event.is_active && !respondedByMe
+    ? 'needs-response'
+    : event.participant_count > 0 && event.response_count >= event.participant_count
+      ? 'ready'
+      : 'collecting';
+  const attendees = [...new Set(timeBlocks.map((block) => initialsFor(block.username)).filter(Boolean))];
+
+  return {
+    id: event.id,
+    apiId: event.id,
+    shareCode: event.code,
+    title: event.name,
+    description: event.description,
+    group,
+    location: 'Remote',
+    organizer: 'Event organizer',
+    dateLabel: createdLabel,
+    duration: `${event.duration_minutes} min`,
+    responses: event.response_count,
+    participants: Math.max(1, event.participant_count),
+    status,
+    accent: colors.accent,
+    softAccent: colors.softAccent,
+    icon: status === 'ready' ? 'check' : 'calendar',
+    attendees,
+    isActive: event.is_active,
+    kind: 'event',
+    groupId: event.group_id || undefined,
+    availability: timeBlocks,
+    options: eventOptions(timeBlocks),
+  };
+}
+
 function Icon({ name, size = 20, stroke = 1.9 }: { name: IconName; size?: number; stroke?: number }) {
   const paths: Record<IconName, JSX.Element> = {
     calendar: <><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M8 3v4M16 3v4M3 10h18"/></>,
@@ -567,6 +652,22 @@ function AvailabilityGrid({
 function AvailabilityResultsGrid({ meeting, dates }: { meeting: Meeting; dates: string[] }) {
   const counts = useMemo(() => {
     const result = new Map<string, number>();
+    if (meeting.availability?.length) {
+      const usersBySlot = new Map<string, Set<number>>();
+      meeting.availability.forEach((block) => {
+        const start = Math.max(availabilityStartMinutes, timeToMinutes(block.start_time));
+        const end = Math.min(availabilityEndMinutes, timeToMinutes(block.end_time));
+        for (let minutes = start; minutes < end; minutes += slotMinutes) {
+          const key = slotKey(block.date, minutes);
+          const users = usersBySlot.get(key) || new Set<number>();
+          users.add(block.user_id);
+          usersBySlot.set(key, users);
+        }
+      });
+      usersBySlot.forEach((users, key) => result.set(key, users.size));
+      return result;
+    }
+
     meeting.options.forEach((option) => {
       const block = availabilityFromOption(option);
       const start = Math.max(availabilityStartMinutes, timeToMinutes(block.start_time));
@@ -579,14 +680,20 @@ function AvailabilityResultsGrid({ meeting, dates }: { meeting: Meeting; dates: 
   }, [meeting]);
   const maxVotes = Math.max(1, ...counts.values());
   const bestOption = [...meeting.options].sort((a, b) => b.votes - a.votes)[0];
+  const bestSlot = [...counts.entries()].sort(([, countA], [, countB]) => countB - countA)[0];
+  const [bestSlotDate, bestSlotMinutes] = bestSlot?.[0].split('|') || [];
+  const bestLabel = meeting.availability?.length && bestSlotDate && bestSlotMinutes
+    ? `${formatDay(bestSlotDate)} · ${minutesToTime(Number(bestSlotMinutes))}–${minutesToTime(Number(bestSlotMinutes) + slotMinutes)}`
+    : bestOption ? `${bestOption.label} · ${bestOption.detail}` : '';
+  const bestVotes = meeting.availability?.length ? bestSlot?.[1] || 0 : bestOption?.votes || 0;
 
   return (
     <Stack gap="md">
-      {bestOption && (
+      {bestLabel && (
         <Paper className="best-overlap" radius="lg">
           <Text size="xs" fw={900}>BEST OVERLAP</Text>
-          <Text fw={850} mt={3}>{bestOption.label} · {bestOption.detail}</Text>
-          <Text size="sm" c="dimmed" mt={2}>{bestOption.votes} of {meeting.participants} participants are available.</Text>
+          <Text fw={850} mt={3}>{bestLabel}</Text>
+          <Text size="sm" c="dimmed" mt={2}>{bestVotes} of {meeting.participants} participants are available.</Text>
         </Paper>
       )}
       <div className="availability-grid-scroll">
@@ -827,7 +934,10 @@ function AuthScreen({
 }
 
 function Dashboard({ session, onLogout }: { session: Session; onLogout: () => void }) {
-  const [meetings, setMeetings] = useState<Meeting[]>(loadStoredMeetings);
+  const [meetings, setMeetings] = useState<Meeting[]>(() => {
+    const stored = loadStoredMeetings();
+    return session.kind === 'demo' ? stored : stored.filter((meeting) => meeting.kind === 'poll');
+  });
   const [groups, setGroups] = useState<WorkspaceGroup[]>(loadStoredGroups);
   const [query, setQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
@@ -849,6 +959,12 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
   const [creationPending, setCreationPending] = useState(false);
   const [creationError, setCreationError] = useState('');
   const [joinCodeError, setJoinCodeError] = useState('');
+  const [joinCodePending, setJoinCodePending] = useState(false);
+  const [eventsLoading, setEventsLoading] = useState(session.kind === 'api');
+  const [eventsError, setEventsError] = useState('');
+  const [eventPage, setEventPage] = useState(1);
+  const [eventsHaveMore, setEventsHaveMore] = useState(false);
+  const [eventDetailLoading, setEventDetailLoading] = useState(false);
   const [meetingCodeCopied, setMeetingCodeCopied] = useState(false);
   const [meetingLinkCopied, setMeetingLinkCopied] = useState(false);
   const [groupAction, setGroupAction] = useState<'groups' | 'create' | 'join'>('groups');
@@ -878,9 +994,36 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
     ));
   }, [managedGroup, participantQuery]);
 
+  const loadEvents = useCallback(async (page = 1, append = false) => {
+    if (session.kind !== 'api') return;
+    setEventsLoading(true);
+    setEventsError('');
+    try {
+      const response = await eventApi.getMany(session.accessToken, { page, pageSize: 20 });
+      const loadedEvents = response.events.map((event) => eventToMeeting(event, groups));
+      setMeetings((current) => {
+        const polls = current.filter((meeting) => meeting.kind === 'poll');
+        if (!append) return [...loadedEvents, ...polls];
+        const existingEvents = current.filter((meeting) => meeting.kind !== 'poll');
+        const newEvents = loadedEvents.filter((event) => !existingEvents.some((existing) => existing.apiId === event.apiId));
+        return [...existingEvents, ...newEvents, ...polls];
+      });
+      setEventPage(response.pagination.page);
+      setEventsHaveMore(response.pagination.has_more);
+    } catch (requestError) {
+      setEventsError(errorMessage(requestError));
+    } finally {
+      setEventsLoading(false);
+    }
+  }, [groups, session]);
+
   useEffect(() => {
-    localStorage.setItem(meetingsStorageKey, JSON.stringify(meetings));
-  }, [meetings]);
+    if (session.kind === 'demo') localStorage.setItem(meetingsStorageKey, JSON.stringify(meetings));
+  }, [meetings, session.kind]);
+
+  useEffect(() => {
+    void loadEvents();
+  }, [loadEvents]);
 
   useEffect(() => {
     localStorage.setItem(groupsStorageKey, JSON.stringify(groups));
@@ -895,6 +1038,7 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
 
   const closeJoinModal = () => {
     setJoinCodeError('');
+    setJoinCodePending(false);
     joinModal.close();
   };
 
@@ -938,13 +1082,15 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
     });
   }, [accessFilter, activeFilter, meetings, query, resourceFilter, sort]);
 
-  const openMeeting = (meeting: Meeting) => {
-    const initialBlocks = meeting.options.map(availabilityFromOption);
+  const showMeeting = (meeting: Meeting) => {
+    const initialBlocks = meeting.availability
+      ? meeting.availability.filter((block) => block.submitted_by_me)
+      : meeting.options.map(availabilityFromOption);
     setSelectedMeeting(meeting);
     setManagedEventId(meeting.apiId === null ? '' : (meeting.apiId ?? meeting.id));
     setAvailabilitySlots(slotsFromBlocks(initialBlocks));
     setSelectedPollOptions(new Set());
-    setAvailabilityStartDate(initialBlocks[0]?.date || '2026-10-26');
+    setAvailabilityStartDate(initialBlocks[0]?.date || meeting.availability?.[0]?.date || new Date().toISOString().slice(0, 10));
     setEventActive(meeting.isActive ?? true);
     setDetailView('respond');
     setNotice('');
@@ -953,6 +1099,31 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
     const url = new URL(window.location.href);
     url.searchParams.set('code', meeting.shareCode);
     window.history.replaceState({}, '', url);
+  };
+
+  const storeEventDetail = (event: EventDetail) => {
+    const meeting = eventToMeeting(event, groups);
+    setMeetings((current) => [
+      meeting,
+      ...current.filter((item) => item.kind === 'poll' || item.apiId !== meeting.apiId),
+    ]);
+    return meeting;
+  };
+
+  const openMeeting = async (meeting: Meeting) => {
+    showMeeting(meeting);
+    if (session.kind !== 'api' || meeting.kind === 'poll') return;
+
+    setEventDetailLoading(true);
+    setNotice('');
+    try {
+      const response = await eventApi.getByID(meeting.apiId ?? meeting.id, session.accessToken);
+      showMeeting(storeEventDetail(response.event));
+    } catch (requestError) {
+      setNotice(errorMessage(requestError));
+    } finally {
+      setEventDetailLoading(false);
+    }
   };
 
   const closeMeeting = () => {
@@ -969,27 +1140,58 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
       deepLinkHandled.current = true;
       return;
     }
-    const meeting = meetings.find((item) => item.shareCode.toUpperCase() === code);
     deepLinkHandled.current = true;
-    if (meeting) openMeeting(meeting);
-    else {
+    const meeting = meetings.find((item) => item.shareCode.toUpperCase() === code);
+    if (meeting) {
+      void openMeeting(meeting);
+      return;
+    }
+    if (session.kind === 'demo') {
       setJoinCodeError('No event or poll matches the code in this link.');
       joinModal.open();
+      return;
     }
+
+    setEventDetailLoading(true);
+    void eventApi.getByCode(code, session.accessToken)
+      .then((response) => showMeeting(storeEventDetail(response.event)))
+      .catch((requestError) => {
+        setJoinCodeError(errorMessage(requestError));
+        joinModal.open();
+      })
+      .finally(() => setEventDetailLoading(false));
   }, [meetings]);
 
-  const joinMeetingByCode = (event: FormEvent<HTMLFormElement>) => {
+  const joinMeetingByCode = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const code = String(new FormData(event.currentTarget).get('meetingCode') || '').trim().toUpperCase();
     const meeting = meetings.find((item) => item.shareCode.toUpperCase() === code);
-    if (!meeting) {
+    if (meeting) {
+      setQuery('');
+      setActiveFilter('all');
+      closeJoinModal();
+      await openMeeting(meeting);
+      return;
+    }
+    if (session.kind === 'demo') {
       setJoinCodeError('No event or poll matches this code. Check the code and try again.');
       return;
     }
-    setQuery('');
-    setActiveFilter('all');
-    closeJoinModal();
-    openMeeting(meeting);
+
+    setJoinCodePending(true);
+    setJoinCodeError('');
+    try {
+      const response = await eventApi.getByCode(code, session.accessToken);
+      const loadedMeeting = storeEventDetail(response.event);
+      setQuery('');
+      setActiveFilter('all');
+      closeJoinModal();
+      showMeeting(loadedMeeting);
+    } catch (requestError) {
+      setJoinCodeError(errorMessage(requestError));
+    } finally {
+      setJoinCodePending(false);
+    }
   };
 
   const copyMeetingCode = async () => {
@@ -1015,7 +1217,9 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
   };
 
   const parsedManagedEventId = typeof managedEventId === 'number' ? managedEventId : Number(managedEventId);
-  const canParticipate = !selectedMeeting?.groupId || groups.some((group) => group.id === selectedMeeting.groupId);
+  const canParticipate = session.kind === 'api' && selectedMeeting?.kind !== 'poll'
+    ? true
+    : !selectedMeeting?.groupId || groups.some((group) => group.id === selectedMeeting.groupId);
   const selectedMeetingMaxVotes = selectedMeeting ? Math.max(1, ...selectedMeeting.options.map((option) => option.votes)) : 1;
 
   const saveAvailability = async () => {
@@ -1045,12 +1249,16 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
       if (session.kind === 'api') {
         const payload = availabilityBlocks.map(({ date, start_time, end_time }) => ({ date, start_time, end_time }));
         await eventApi.saveAvailability(parsedManagedEventId, payload, session.accessToken);
+        const response = await eventApi.getByID(parsedManagedEventId, session.accessToken);
+        showMeeting(storeEventDetail(response.event));
+        setNotice('Availability saved to your API.');
+        return;
       }
       setMeetings((current) => current.map((meeting) => meeting.id === selectedMeeting.id
         ? { ...meeting, status: 'collecting', responses: Math.min(meeting.responses + 1, meeting.participants) }
         : meeting));
       setSelectedMeeting((current) => current ? { ...current, status: 'collecting', responses: Math.min(current.responses + 1, current.participants) } : current);
-      setNotice(session.kind === 'demo' ? 'Availability saved in demo mode.' : 'Availability saved to your API.');
+      setNotice('Availability saved in demo mode.');
     } catch (requestError) {
       setNotice(errorMessage(requestError));
     } finally {
@@ -1119,7 +1327,14 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
     try {
       if (session.kind === 'api') {
         if (selectedMeeting.kind === 'poll') await pollApi.toggleActive(parsedManagedEventId, session.accessToken);
-        else await eventApi.toggleActive(parsedManagedEventId, session.accessToken);
+        else {
+          await eventApi.toggleActive(parsedManagedEventId, session.accessToken);
+          const response = await eventApi.getByID(parsedManagedEventId, session.accessToken);
+          const refreshedMeeting = storeEventDetail(response.event);
+          showMeeting(refreshedMeeting);
+          setNotice(`Event is now ${refreshedMeeting.isActive ? 'active' : 'inactive'}.`);
+          return;
+        }
       }
       const nextActive = !eventActive;
       setEventActive(nextActive);
@@ -1169,10 +1384,15 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
           await pollApi.create({ ...input, options: pollOptions }, session.accessToken, groupId);
         } else {
           await eventApi.create(input, session.accessToken, groupId);
+          await loadEvents();
+          setActiveFilter('all');
+          setDashboardNotice('Event created through your API and added to the dashboard.');
+          closeCreateModal();
+          return;
         }
       }
 
-      const nextId = Math.max(...meetings.map((meeting) => meeting.id)) + 1;
+      const nextId = Math.max(0, ...meetings.map((meeting) => meeting.id)) + 1;
       const targetGroup = groups.find((group) => group.id === groupId);
       const group = targetGroup?.name || 'Open event';
       const nextOptions = creationKind === 'poll'
@@ -1216,7 +1436,7 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
       setActiveFilter('all');
       setDashboardNotice(session.kind === 'demo'
         ? `${creationKind === 'poll' ? 'Poll' : 'Event'} created in demo mode.`
-        : `${creationKind === 'poll' ? 'Poll' : 'Event'} created through your API. The create response does not include its new ID.`);
+        : 'Poll created through your API.');
       closeCreateModal();
     } catch (requestError) {
       setCreationError(errorMessage(requestError));
@@ -1544,7 +1764,26 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
           {session.kind === 'api' && (
             <Paper className="api-scope-note" radius="lg" mt={18}>
               <ThemeIcon color="violet" variant="light" radius="xl"><Icon name="sparkle" size={16} /></ThemeIcon>
-              <Text size="sm"><strong>API mode.</strong> The API does not provide an event list, so the example events remain visible. Enter an event ID before updating it.</Text>
+              <Text size="sm"><strong>API mode.</strong> Events, details, join codes, availability, and active status are connected to your backend. Poll cards stay local until poll read endpoints are available.</Text>
+            </Paper>
+          )}
+
+          {eventsError && (
+            <Paper className="api-scope-note" radius="lg" mt={18} role="alert">
+              <ThemeIcon color="red" variant="light" radius="xl"><Icon name="sparkle" size={16} /></ThemeIcon>
+              <Box>
+                <Text size="sm" fw={800}>Could not load events</Text>
+                <Text size="xs" c="dimmed" mt={2}>{eventsError}</Text>
+              </Box>
+              <Button size="xs" variant="light" color="red" onClick={() => void loadEvents()}>Try again</Button>
+            </Paper>
+          )}
+
+          {eventsLoading && meetings.every((meeting) => meeting.kind === 'poll') && (
+            <Paper className="empty-state" radius="xl" mt={28} aria-live="polite">
+              <ThemeIcon color="violet" variant="light" radius="xl" size={52}><Icon name="calendar" /></ThemeIcon>
+              <Title order={3} mt={16}>Loading your events…</Title>
+              <Text c="dimmed" mt={5}>Getting the latest event data from the API.</Text>
             </Paper>
           )}
 
@@ -1554,7 +1793,7 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
                 key={meeting.id}
                 className="meeting-card"
                 style={{ '--accent': meeting.accent, '--soft-accent': meeting.softAccent } as React.CSSProperties}
-                onClick={() => openMeeting(meeting)}
+                onClick={() => void openMeeting(meeting)}
               >
                 <Group justify="space-between" align="flex-start" wrap="nowrap" gap="xl">
                   <Box className="meeting-copy">
@@ -1588,7 +1827,15 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
             ))}
           </Stack>
 
-          {filteredMeetings.length === 0 && (
+          {session.kind === 'api' && eventsHaveMore && (
+            <Group justify="center" mt="xl">
+              <Button variant="default" loading={eventsLoading} onClick={() => void loadEvents(eventPage + 1, true)}>
+                Load more events
+              </Button>
+            </Group>
+          )}
+
+          {!eventsLoading && filteredMeetings.length === 0 && (
             <Paper className="empty-state" radius="xl">
               <ThemeIcon color="violet" variant="light" radius="xl" size={52}><Icon name="search" /></ThemeIcon>
               <Title order={3} mt={16}>No events found</Title>
@@ -1614,6 +1861,9 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
       >
         {selectedMeeting && (
           <Stack gap={24}>
+            {eventDetailLoading && (
+              <Text className="success-notice" role="status">Loading the latest event details…</Text>
+            )}
             <Box>
               <Badge className="drawer-badge" style={{ background: selectedMeeting.softAccent, color: selectedMeeting.accent }}>
                 {selectedMeeting.group}
@@ -1673,6 +1923,7 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
                 label={selectedMeeting.kind === 'poll' ? 'Poll ID' : 'Event ID'}
                 value={managedEventId}
                 onChange={setManagedEventId}
+                readOnly={session.kind === 'api' && selectedMeeting.kind !== 'poll'}
                 min={1}
                 allowDecimal={false}
                 placeholder="e.g. 42"
@@ -1849,15 +2100,17 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
               autoFocus
               required
             />
-            <Paper className="demo-code-note" radius="lg">
-              <Text size="xs" fw={900}>DEMO CODES</Text>
-              <Text size="sm" mt={4}><code>EVENT-DEMO</code> · availability event</Text>
-              <Text size="sm" mt={2}><code>POLL-DEMO</code> · time poll</Text>
-            </Paper>
+            {session.kind === 'demo' && (
+              <Paper className="demo-code-note" radius="lg">
+                <Text size="xs" fw={900}>DEMO CODES</Text>
+                <Text size="sm" mt={4}><code>EVENT-DEMO</code> · availability event</Text>
+                <Text size="sm" mt={2}><code>POLL-DEMO</code> · time poll</Text>
+              </Paper>
+            )}
             {joinCodeError && <Text className="error-notice" role="alert">{joinCodeError}</Text>}
             <Group justify="flex-end" mt="xs">
               <Button variant="subtle" color="dark" onClick={closeJoinModal}>Cancel</Button>
-              <Button type="submit" className="create-button">Open</Button>
+              <Button type="submit" className="create-button" loading={joinCodePending}>Open</Button>
             </Group>
           </Stack>
         </form>

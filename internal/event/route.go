@@ -13,6 +13,9 @@ type eventHandler interface {
 	CreateForGroup(w http.ResponseWriter, r *http.Request) error
 	ToggleActive(w http.ResponseWriter, r *http.Request) error
 	AddTimeBlocks(w http.ResponseWriter, r *http.Request) error
+	GetMany(w http.ResponseWriter, r *http.Request) error
+	GetByID(w http.ResponseWriter, r *http.Request) error
+	GetByCode(w http.ResponseWriter, r *http.Request) error
 }
 
 type Routes struct {
@@ -35,6 +38,9 @@ func (er *Routes) Setup(router *http.ServeMux) {
 		request.Make(er.eventHandler.CreateForGroup, er.logger),
 	)
 	router.Handle(fmt.Sprintf("POST %s/", prefix), request.Make(er.eventHandler.Create, er.logger))
+	router.Handle(fmt.Sprintf("GET %s/", prefix), request.Make(er.eventHandler.GetMany, er.logger))
+	router.Handle(fmt.Sprintf("GET %s/code/{code}", prefix), request.Make(er.eventHandler.GetByCode, er.logger))
+	router.Handle(fmt.Sprintf("GET %s/{eventID}", prefix), request.Make(er.eventHandler.GetByID, er.logger))
 	router.Handle(fmt.Sprintf("PATCH %s/{eventID}", prefix), request.Make(er.eventHandler.ToggleActive, er.logger))
 	router.Handle(fmt.Sprintf("PUT %s/{eventID}", prefix), request.Make(er.eventHandler.AddTimeBlocks, er.logger))
 }

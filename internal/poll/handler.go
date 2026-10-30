@@ -11,7 +11,6 @@ import (
 	commoninterfaces "github.com/adrian-kurek/fit_the_meet/common/interfaces"
 	"github.com/adrian-kurek/fit_the_meet/common/request"
 	"github.com/adrian-kurek/fit_the_meet/common/response"
-	"github.com/adrian-kurek/fit_the_meet/common/validation"
 )
 
 type pollService interface {
@@ -105,15 +104,11 @@ func (ph *Handler) create(w http.ResponseWriter, r *http.Request, groupID *int) 
 		return err
 	}
 
-	reqData, err := request.ReadBody[Input](r)
-	if err != nil {
-		return commonerrors.Validation("provided invalid json format")
-	}
-
-	err = validation.ValidateRequestData(reqData)
+	reqData, err := request.ReadAndValidateBody[Input](r)
 	if err != nil {
 		return err
 	}
+
 	if err = reqData.Validate(); err != nil {
 		return err
 	}
@@ -140,12 +135,7 @@ func (ph *Handler) SubmitAnswers(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	reqData, err := request.ReadBody[SubmitAnswers](r)
-	if err != nil {
-		return commonerrors.Validation("provided invalid json format")
-	}
-
-	err = validation.ValidateRequestData(reqData)
+	reqData, err := request.ReadAndValidateBody[SubmitAnswers](r)
 	if err != nil {
 		return err
 	}

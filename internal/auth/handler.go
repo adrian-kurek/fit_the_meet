@@ -22,7 +22,7 @@ type authService interface {
 		login LoginRequest,
 		ipAddress string,
 		deviceInfo string,
-	) (string, []byte, error)
+	) (string, []byte, int, string, error)
 	RefreshAccessToken(ctx context.Context, refreshToken []byte) (string, error)
 	Logout(ctx context.Context, refreshToken []byte) error
 	LogoutFromAllDevices(ctx context.Context, userID int) error
@@ -94,7 +94,7 @@ func (ah *Handler) Login(w http.ResponseWriter, r *http.Request) error {
 	ipAddress := r.RemoteAddr
 	deviceInfo := r.UserAgent()
 
-	accessToken, refreshToken, err := ah.authService.Login(ctx, *reqData, ipAddress, deviceInfo)
+	accessToken, refreshToken, userID, username, err := ah.authService.Login(ctx, *reqData, ipAddress, deviceInfo)
 	if err != nil {
 		return ah.handleTimeout(err, r.URL.Path)
 	}
@@ -111,7 +111,14 @@ func (ah *Handler) Login(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	http.SetCookie(w, &cookie)
-	response.Send(w, http.StatusOK, map[string]string{"token": accessToken})
+	response.Send(w, http.StatusOK, map[string]any{
+		"token": accessToken,
+		"user": map[string]any{
+			"id":       userID,
+			"email":    reqData.Email,
+			"username": username,
+		},
+	})
 
 	return nil
 }

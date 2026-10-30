@@ -15,9 +15,12 @@ RUN go build -o api ./cmd/api
 
 FROM alpine:latest
 
-WORKDIR /root/
+RUN adduser -D appuser
+USER appuser
 
-COPY --from=builder /app/api .
+WORKDIR /app
+
+COPY --from=builder --chown=appuser:appuser /app/api .
 
 EXPOSE 8080
 

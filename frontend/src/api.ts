@@ -7,6 +7,11 @@ export type RegistrationDetails = LoginCredentials & {
   username: string;
 };
 
+export type ResetPasswordDetails = {
+  token: string;
+  password: string;
+};
+
 export type EventInput = {
   name: string;
   description: string;
@@ -126,6 +131,20 @@ export const authApi = {
 
   async register(details: RegistrationDetails) {
     return request<void>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(details),
+    });
+  },
+
+  async requestPasswordReset(email: string) {
+    return request<void>('/auth/password-reset/request', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  async resetPassword(details: ResetPasswordDetails) {
+    return request<void>('/auth/password-reset/confirm', {
       method: 'POST',
       body: JSON.stringify(details),
     });

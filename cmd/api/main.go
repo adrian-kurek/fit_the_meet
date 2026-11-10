@@ -29,13 +29,27 @@ func bootstrapHTTPServer(
 ) *server.HTTP {
 	authRepository := auth.NewRepository(db, logger)
 	userRepository := user.NewRepository(db, logger)
+	passwordResetMailer := auth.NewMailer(
+		os.Getenv("SMTP_HOST"),
+		os.Getenv("SMTP_PORT"),
+		os.Getenv("SMTP_USERNAME"),
+		os.Getenv("SMTP_PASSWORD"),
+		os.Getenv("SMTP_FROM"),
+	)
 	authenticationMiddleware := middleware.NewMiddleware(
 		os.Getenv("ACCESS_TOKEN_SECRET"),
 		os.Getenv("REFRESH_TOKEN_SECRET"),
 		logger,
 		cache,
 	)
-	authService := auth.NewService(authRepository, userRepository, authenticationMiddleware, logger)
+	authService := auth.NewService(
+		authRepository,
+		userRepository,
+		authenticationMiddleware,
+		passwordResetMailer,
+		os.Getenv("FRONTEND_URL"),
+		logger,
+	)
 	authHandler := auth.NewHandler(authService, authenticationMiddleware, logger)
 
 	groupRepository := group.NewRepository(db, logger)

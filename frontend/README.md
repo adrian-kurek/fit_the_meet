@@ -15,6 +15,8 @@ Vite proxies `/api` to the existing Go API at `http://127.0.0.1:8080`. Override 
 
 - `POST /auth/register`
 - `POST /auth/login`
+- `POST /auth/password-reset/request`
+- `POST /auth/password-reset/confirm`
 - `DELETE /auth/logout`
 - `GET /events/`
 - `GET /events/{eventID}`

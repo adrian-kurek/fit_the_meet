@@ -48,6 +48,8 @@ type authHandler interface {
 	RefreshAccessToken(w http.ResponseWriter, r *http.Request) error
 	Logout(w http.ResponseWriter, r *http.Request) error
 	LogoutFromAllDevices(w http.ResponseWriter, r *http.Request) error
+	RequestPasswordReset(w http.ResponseWriter, r *http.Request) error
+	ResetPassword(w http.ResponseWriter, r *http.Request) error
 }
 
 type groupHandler interface {

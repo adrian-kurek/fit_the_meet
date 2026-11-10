@@ -739,7 +739,7 @@ function statusLabel(status: MeetingStatus) {
   }[status];
 }
 
-type AuthMode = 'login' | 'register';
+type AuthMode = 'login' | 'register' | 'forgot-password' | 'reset-password';
 type Session = { kind: 'demo' } | { kind: 'api'; accessToken: string };
 
 function errorMessage(error: unknown) {
@@ -752,39 +752,56 @@ function AuthScreen({
   onModeChange,
   onLogin,
   onRegister,
+  onRequestPasswordReset,
+  onResetPassword,
   onDemo,
 }: {
   mode: AuthMode;
   onModeChange: (mode: AuthMode) => void;
   onLogin: (credentials: LoginCredentials, remember: boolean) => Promise<void>;
   onRegister: (details: RegistrationDetails) => Promise<void>;
+  onRequestPasswordReset: (email: string) => Promise<void>;
+  onResetPassword: (token: string, password: string) => Promise<void>;
   onDemo: () => void;
 }) {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const isLogin = mode === 'login';
+  const isRegister = mode === 'register';
+  const isForgotPassword = mode === 'forgot-password';
+  const isResetPassword = mode === 'reset-password';
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError('');
     setNotice('');
     const form = new FormData(event.currentTarget);
-    if (!isLogin && form.get('password') !== form.get('confirmPassword')) {
+    if ((isRegister || isResetPassword) && form.get('password') !== form.get('confirmPassword')) {
       setError('Passwords do not match.');
       return;
     }
 
     setSubmitting(true);
     try {
-      const email = String(form.get('email'));
-      const password = String(form.get('password'));
       if (isLogin) {
+        const email = String(form.get('email'));
+        const password = String(form.get('password'));
         await onLogin({ email, password }, form.get('remember') === 'on');
-      } else {
+      } else if (isRegister) {
+        const email = String(form.get('email'));
+        const password = String(form.get('password'));
         await onRegister({ username: String(form.get('username')), email, password });
         onModeChange('login');
         setNotice('Account created. Sign in with your new details.');
+      } else if (isForgotPassword) {
+        await onRequestPasswordReset(String(form.get('email')));
+        setNotice('If an account exists for that email, a reset link is on its way.');
+      } else {
+        const token = new URLSearchParams(window.location.search).get('reset_token') || '';
+        await onResetPassword(token, String(form.get('password')));
+        onModeChange('login');
+        setNotice('Password changed. Sign in with your new password.');
       }
     } catch (requestError) {
       setError(errorMessage(requestError));
@@ -798,6 +815,33 @@ function AuthScreen({
     setNotice('');
     onModeChange(nextMode);
   };
+
+  const authCopy = {
+    login: {
+      eyebrow: 'Sign in',
+      title: 'Open your events.',
+      description: 'Enter your email address and password.',
+      submit: 'Sign in',
+    },
+    register: {
+      eyebrow: 'Create account',
+      title: 'Create an account.',
+      description: 'Enter your details to register.',
+      submit: 'Create account',
+    },
+    'forgot-password': {
+      eyebrow: 'Password reset',
+      title: 'Find your account.',
+      description: 'Enter your email and we will send you a secure reset link.',
+      submit: 'Send reset link',
+    },
+    'reset-password': {
+      eyebrow: 'Choose password',
+      title: 'Set a new password.',
+      description: 'Use at least 8 characters for your new password.',
+      submit: 'Reset password',
+    },
+  }[mode];
 
   return (
     <main className="auth-shell">
@@ -847,15 +891,15 @@ function AuthScreen({
         </Group>
 
         <Paper className="auth-card" radius="xl">
-          <Text className="eyebrow">{isLogin ? 'Sign in' : 'Create account'}</Text>
-          <Title order={2} mt={5}>{isLogin ? 'Open your events.' : 'Create an account.'}</Title>
+          <Text className="eyebrow">{authCopy.eyebrow}</Text>
+          <Title order={2} mt={5}>{authCopy.title}</Title>
           <Text c="dimmed" mt={9} size="sm">
-            {isLogin ? 'Enter your email address and password.' : 'Enter your details to register.'}
+            {authCopy.description}
           </Text>
 
           <form key={mode} onSubmit={submit} className="auth-form">
             <Stack gap="md">
-              {!isLogin && (
+              {isRegister && (
                 <TextInput
                   name="username"
                   label="Username"
@@ -866,28 +910,32 @@ function AuthScreen({
                   autoComplete="username"
                 />
               )}
-              <TextInput
-                name="email"
-                type="email"
-                label="Email address"
-                placeholder="name@example.com"
-                leftSection={<Icon name="mail" size={18} />}
-                required
-                autoComplete="email"
-              />
-              <PasswordInput
-                name="password"
-                label="Password"
-                placeholder={isLogin ? 'Your password' : 'At least 8 characters'}
-                leftSection={<Icon name="lock" size={18} />}
-                required
-                minLength={8}
-                autoComplete={isLogin ? 'current-password' : 'new-password'}
-              />
-              {!isLogin && (
+              {!isResetPassword && (
+                <TextInput
+                  name="email"
+                  type="email"
+                  label="Email address"
+                  placeholder="name@example.com"
+                  leftSection={<Icon name="mail" size={18} />}
+                  required
+                  autoComplete="email"
+                />
+              )}
+              {!isForgotPassword && (
+                <PasswordInput
+                  name="password"
+                  label={isResetPassword ? 'New password' : 'Password'}
+                  placeholder={isLogin ? 'Your password' : 'At least 8 characters'}
+                  leftSection={<Icon name="lock" size={18} />}
+                  required
+                  minLength={8}
+                  autoComplete={isLogin ? 'current-password' : 'new-password'}
+                />
+              )}
+              {(isRegister || isResetPassword) && (
                 <PasswordInput
                   name="confirmPassword"
-                  label="Confirm password"
+                  label={isResetPassword ? 'Confirm new password' : 'Confirm password'}
                   placeholder="Repeat your password"
                   leftSection={<Icon name="lock" size={18} />}
                   required
@@ -899,33 +947,45 @@ function AuthScreen({
               {isLogin ? (
                 <Group justify="space-between" gap="sm">
                   <Checkbox name="remember" label="Keep me signed in" size="sm" />
-                  <Anchor component="button" type="button" size="sm" fw={750} c="violet">Forgot password?</Anchor>
+                  <Anchor component="button" type="button" size="sm" fw={750} c="violet" onClick={() => switchMode('forgot-password')}>Forgot password?</Anchor>
                 </Group>
-              ) : (
+              ) : isRegister ? (
                 <Checkbox
                   required
                   label={<Text size="sm">I agree to the <Anchor href="#" c="violet">Terms</Anchor> and <Anchor href="#" c="violet">Privacy Policy</Anchor>.</Text>}
                 />
-              )}
+              ) : null}
 
               {notice && <Text className="success-notice" role="status">{notice}</Text>}
               {error && <Text className="error-notice" role="alert">{error}</Text>}
               <Button type="submit" className="auth-submit" size="lg" loading={submitting}>
-                {isLogin ? 'Sign in' : 'Create account'}
+                {authCopy.submit}
               </Button>
             </Stack>
           </form>
 
-          <Divider label="or" labelPosition="center" my="xl" />
-          <Button fullWidth variant="outline" color="dark" className="demo-button" onClick={onDemo}>
-            Open demo
-          </Button>
+          {(isLogin || isRegister) && (
+            <>
+              <Divider label="or" labelPosition="center" my="xl" />
+              <Button fullWidth variant="outline" color="dark" className="demo-button" onClick={onDemo}>
+                Open demo
+              </Button>
+            </>
+          )}
 
           <Text ta="center" size="sm" c="dimmed" mt="xl">
-            {isLogin ? 'New to Fit the Meet?' : 'Already have an account?'}{' '}
-            <Anchor component="button" type="button" fw={850} c="dark" onClick={() => switchMode(isLogin ? 'register' : 'login')}>
-              {isLogin ? 'Create an account' : 'Sign in'}
-            </Anchor>
+            {isLogin || isRegister ? (
+              <>
+                {isLogin ? 'New to Fit the Meet?' : 'Already have an account?'}{' '}
+                <Anchor component="button" type="button" fw={850} c="dark" onClick={() => switchMode(isLogin ? 'register' : 'login')}>
+                  {isLogin ? 'Create an account' : 'Sign in'}
+                </Anchor>
+              </>
+            ) : (
+              <Anchor component="button" type="button" fw={850} c="dark" onClick={() => switchMode('login')}>
+                Back to sign in
+              </Anchor>
+            )}
           </Text>
         </Paper>
       </section>
@@ -2476,14 +2536,28 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
 
 const accessTokenStorageKey = 'fit-the-meet-access-token';
 
+function resetTokenFromURL() {
+  return new URLSearchParams(window.location.search).get('reset_token')?.trim() || '';
+}
+
 function storedSession(): Session | null {
+  if (resetTokenFromURL()) return null;
   const accessToken = localStorage.getItem(accessTokenStorageKey) || sessionStorage.getItem(accessTokenStorageKey);
   return accessToken ? { kind: 'api', accessToken } : null;
 }
 
 function App() {
-  const [authMode, setAuthMode] = useState<AuthMode>('login');
+  const [authMode, setAuthMode] = useState<AuthMode>(() => resetTokenFromURL() ? 'reset-password' : 'login');
   const [session, setSession] = useState<Session | null>(storedSession);
+
+  const changeAuthMode = (mode: AuthMode) => {
+    if (mode !== 'reset-password' && resetTokenFromURL()) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('reset_token');
+      window.history.replaceState({}, '', url);
+    }
+    setAuthMode(mode);
+  };
 
   const login = async (credentials: LoginCredentials, remember: boolean) => {
     const { token } = await authApi.login(credentials);
@@ -2498,21 +2572,33 @@ function App() {
     await authApi.register(details);
   };
 
+  const requestPasswordReset = async (email: string) => {
+    await authApi.requestPasswordReset(email);
+  };
+
+  const resetPassword = async (token: string, password: string) => {
+    await authApi.resetPassword({ token, password });
+    localStorage.removeItem(accessTokenStorageKey);
+    sessionStorage.removeItem(accessTokenStorageKey);
+  };
+
   const logout = () => {
     if (session?.kind === 'api') void authApi.logout(session.accessToken).catch(() => undefined);
     localStorage.removeItem(accessTokenStorageKey);
     sessionStorage.removeItem(accessTokenStorageKey);
     setSession(null);
-    setAuthMode('login');
+    changeAuthMode('login');
   };
 
   if (!session) {
     return (
       <AuthScreen
         mode={authMode}
-        onModeChange={setAuthMode}
+        onModeChange={changeAuthMode}
         onLogin={login}
         onRegister={register}
+        onRequestPasswordReset={requestPasswordReset}
+        onResetPassword={resetPassword}
         onDemo={() => setSession({ kind: 'demo' })}
       />
     );

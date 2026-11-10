@@ -26,6 +26,8 @@ type authService interface {
 	RefreshAccessToken(ctx context.Context, refreshToken []byte) (string, error)
 	Logout(ctx context.Context, refreshToken []byte) error
 	LogoutFromAllDevices(ctx context.Context, userID int) error
+	RequestPasswordReset(ctx context.Context, email string) error
+	ResetPassword(ctx context.Context, reset ResetPasswordRequest) error
 }
 
 type Handler struct {
@@ -52,6 +54,19 @@ func (ah *Handler) handleTimeout(err error, path string) error {
 		return commonerrors.RequestTimeout()
 	}
 	return err
+}
+
+func (ah *Handler) authenticateAndGetUserID(r *http.Request) (int, error) {
+	r, err := ah.authenticationMiddleware.VerifyToken(r)
+	if err != nil {
+		return 0, ah.handleTimeout(err, r.URL.Path)
+	}
+
+	userID, err := request.ReadUserIDFromToken(r)
+	if err != nil {
+		return 0, err
+	}
+	return userID, nil
 }
 
 func (ah *Handler) Register(w http.ResponseWriter, r *http.Request) error {
@@ -200,12 +215,7 @@ func (ah *Handler) LogoutFromAllDevices(w http.ResponseWriter, r *http.Request) 
 	ctx, cancel := context.WithTimeout(r.Context(), authTimeout)
 	defer cancel()
 
-	r, err := ah.authenticationMiddleware.VerifyToken(r)
-	if err != nil {
-		return ah.handleTimeout(err, r.URL.Path)
-	}
-
-	userID, err := request.ReadUserIDFromToken(r)
+	userID, err := ah.authenticateAndGetUserID(r)
 	if err != nil {
 		return err
 	}
@@ -217,5 +227,39 @@ func (ah *Handler) LogoutFromAllDevices(w http.ResponseWriter, r *http.Request) 
 
 	response.Send(w, http.StatusNoContent, nil)
 
+	return nil
+}
+
+func (ah *Handler) RequestPasswordReset(w http.ResponseWriter, r *http.Request) error {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	reqData, err := request.ReadAndValidateBody[RequestPasswordResetRequest](r)
+	if err != nil {
+		return err
+	}
+
+	if err = ah.authService.RequestPasswordReset(ctx, reqData.Email); err != nil {
+		return ah.handleTimeout(err, r.URL.Path)
+	}
+
+	response.Send(w, http.StatusAccepted, nil)
+	return nil
+}
+
+func (ah *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) error {
+	ctx, cancel := context.WithTimeout(r.Context(), authTimeout)
+	defer cancel()
+
+	reqData, err := request.ReadAndValidateBody[ResetPasswordRequest](r)
+	if err != nil {
+		return err
+	}
+
+	if err = ah.authService.ResetPassword(ctx, *reqData); err != nil {
+		return ah.handleTimeout(err, r.URL.Path)
+	}
+
+	response.Send(w, http.StatusNoContent, nil)
 	return nil
 }

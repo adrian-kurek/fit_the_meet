@@ -215,3 +215,68 @@ func (ar *Repository) RemoveTokensByUserID(ctx context.Context, userID int) erro
 
 	return nil
 }
+
+func (ar *Repository) SavePasswordResetToken(
+	ctx context.Context,
+	userID int,
+	tokenHash string,
+	expiresAt time.Time,
+) error {
+	const query = `INSERT INTO password_reset_tokens(user_id, token_hash, expires_at)
+	VALUES($1, $2, $3)
+	ON CONFLICT (user_id) DO UPDATE SET
+		token_hash = EXCLUDED.token_hash,
+		expires_at = EXCLUDED.expires_at,
+		created_at = CURRENT_TIMESTAMP`
+
+	if _, err := ar.db.ExecContext(ctx, query, userID, tokenHash, expiresAt); err != nil {
+		ar.logger.Error(commonerrors.FailedToExecuteInsertQuery, "data", map[string]any{
+			queryMsg: query,
+			errorMsg: err,
+		})
+		return err
+	}
+
+	return nil
+}
+
+func (ar *Repository) ResetPassword(ctx context.Context, tokenHash, password string) error {
+	tx, err := ar.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if rollbackErr := tx.Rollback(); rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
+			ar.logger.Error("failed to roll back password reset", "err", rollbackErr)
+		}
+	}()
+
+	const tokenQuery = `SELECT user_id
+	FROM password_reset_tokens
+	WHERE token_hash = $1 AND expires_at > NOW()
+	FOR UPDATE`
+	var userID int
+	if err = tx.QueryRowContext(ctx, tokenQuery, tokenHash).Scan(&userID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return commonerrors.Validation("password reset link is invalid or has expired")
+		}
+		return err
+	}
+
+	const updatePasswordQuery = "UPDATE users SET password = $1 WHERE id = $2"
+	if _, err = tx.ExecContext(ctx, updatePasswordQuery, password, userID); err != nil {
+		return err
+	}
+
+	const removeSessionsQuery = "DELETE FROM refresh_tokens WHERE user_id = $1"
+	if _, err = tx.ExecContext(ctx, removeSessionsQuery, userID); err != nil {
+		return err
+	}
+
+	const removeResetTokensQuery = "DELETE FROM password_reset_tokens WHERE user_id = $1"
+	if _, err = tx.ExecContext(ctx, removeResetTokensQuery, userID); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
